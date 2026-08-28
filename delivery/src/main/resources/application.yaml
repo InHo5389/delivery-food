@@ -1,3 +1,14 @@
 spring:
   application:
     name: delivery
+  datasource:
+    url: jdbc:mysql://localhost:3306/delivery
+    username: root
+    password: root
+  jpa:
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true

@@ -2,8 +2,13 @@ package delivery.shop.application
 
 import delivery.common.exception.BusinessException
 import delivery.shop.application.dto.CreateShopCommand
+import delivery.shop.application.dto.MenuGroupResult
 import delivery.shop.application.dto.NearbyShopQuery
 import delivery.shop.application.dto.UpdateShopCommand
+import delivery.shop.domain.BusinessHours
+import delivery.shop.domain.Menu
+import delivery.shop.domain.MenuGroup
+import delivery.shop.infrastructure.BusinessHoursRepository
 import delivery.shop.infrastructure.NearbyShopRow
 import delivery.shop.domain.Shop
 import delivery.shop.domain.ShopErrorCode
@@ -17,6 +22,8 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import java.math.BigDecimal
+import java.time.DayOfWeek
+import java.time.LocalTime
 import java.util.Optional
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -26,6 +33,8 @@ class ShopServiceTest {
 
     private val shopRepository = mockk<ShopRepository>()
     private val shopSearchRepository = mockk<ShopSearchRepository>()
+    private val businessHoursRepository = mockk<BusinessHoursRepository>()
+    private val menuService = mockk<MenuService>()
     private lateinit var shopService: ShopService
 
     private val latitude = BigDecimal("37.5665000")
@@ -33,7 +42,7 @@ class ShopServiceTest {
 
     @BeforeEach
     fun setUp() {
-        shopService = ShopService(shopRepository, shopSearchRepository)
+        shopService = ShopService(shopRepository, shopSearchRepository, businessHoursRepository, menuService)
     }
 
     @Test
@@ -123,5 +132,48 @@ class ShopServiceTest {
         val actual = shopService.getNearbyOpenShops(query)
 
         assertTrue(actual.isEmpty())
+    }
+
+    @Test
+    fun `상점 상세를 조회하면 상점, 영업시간, 메뉴그룹별 메뉴를 함께 반환한다`() {
+        val shop = Shop.withId(1L, 1L, "가게", "서울", "0212345678", latitude, longitude)
+        val hours = BusinessHours.withId(1L, 1L, DayOfWeek.MONDAY, LocalTime.of(9, 0), LocalTime.of(22, 0))
+        val menuGroup = MenuGroup.withId(1L, 1L, "메인", 0)
+        val menu = Menu.withId(1L, 1L, 1L, "짜장면", 8000L, 0)
+
+        every { shopRepository.findById(1L) } returns Optional.of(shop)
+        every { businessHoursRepository.findAllByShopId(1L) } returns listOf(hours)
+        every { menuService.getMenuGroupsByShopId(1L) } returns listOf(menuGroup)
+        every { menuService.getMenusByMenuGroupId(1L) } returns listOf(menu)
+
+        val actual = shopService.getShopDetail(1L)
+
+        assertEquals(shop, actual.shop)
+        assertEquals(1, actual.businessHours.size)
+        assertEquals(1, actual.menuGroups.size)
+        assertEquals(1, actual.menuGroups[0].menus.size)
+        assertEquals("짜장면", actual.menuGroups[0].menus[0].name)
+    }
+
+    @Test
+    fun `존재하지 않는 상점의 상세를 조회하면 예외가 발생한다`() {
+        every { shopRepository.findById(999L) } returns Optional.empty()
+
+        val exception = assertThrows<BusinessException> { shopService.getShopDetail(999L) }
+
+        assertEquals(ShopErrorCode.SHOP_NOT_FOUND, exception.errorCode)
+    }
+
+    @Test
+    fun `메뉴 그룹이 없는 상점은 빈 메뉴 목록을 반환한다`() {
+        val shop = Shop.withId(1L, 1L, "가게", "서울", "0212345678", latitude, longitude)
+        every { shopRepository.findById(1L) } returns Optional.of(shop)
+        every { businessHoursRepository.findAllByShopId(1L) } returns emptyList()
+        every { menuService.getMenuGroupsByShopId(1L) } returns emptyList()
+
+        val actual = shopService.getShopDetail(1L)
+
+        assertTrue(actual.menuGroups.isEmpty())
+        assertTrue(actual.businessHours.isEmpty())
     }
 }

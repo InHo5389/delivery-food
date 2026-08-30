@@ -25,6 +25,7 @@ class SecurityConfig {
                 authorize("/auth/**", permitAll)
                 authorize("/shops", permitAll)
                 authorize("/shops/*", permitAll)
+                authorize("/search/**", permitAll)
                 authorize(anyRequest, authenticated)
             }
             httpBasic { disable() }

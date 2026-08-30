@@ -1,0 +1,4 @@
+jwt:
+  # HS256 서명용 secret. 32바이트(256비트) 이상 권장.
+  # openssl rand -base64 48 로 생성한다.
+  secret: replace-with-your-own-local-secret-value

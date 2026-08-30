@@ -1,10 +1,9 @@
 package delivery
 
+import delivery.support.IntegrationTestSupport
 import org.junit.jupiter.api.Test
-import org.springframework.boot.test.context.SpringBootTest
 
-@SpringBootTest
-class DeliveryApplicationTests {
+class DeliveryApplicationTests : IntegrationTestSupport() {
 
 	@Test
 	fun contextLoads() {

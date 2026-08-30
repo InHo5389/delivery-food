@@ -4,6 +4,7 @@ import jakarta.servlet.http.HttpServletRequest
 import org.slf4j.LoggerFactory
 import org.springframework.http.HttpStatus
 import org.springframework.http.ProblemDetail
+import org.springframework.http.converter.HttpMessageNotReadableException
 import org.springframework.web.bind.MethodArgumentNotValidException
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
@@ -25,6 +26,12 @@ class GlobalExceptionHandler {
         val message = e.bindingResult.fieldErrors
             .joinToString(", ") { "${it.field}: ${it.defaultMessage}" }
         return problemDetail(CommonErrorCode.INVALID_INPUT.status, CommonErrorCode.INVALID_INPUT.name, message, request)
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException::class)
+    fun handleHttpMessageNotReadableException(e: HttpMessageNotReadableException, request: HttpServletRequest): ProblemDetail {
+        log.warn("HttpMessageNotReadableException: {}", e.message)
+        return problemDetail(CommonErrorCode.INVALID_INPUT.status, CommonErrorCode.INVALID_INPUT.name, "요청 본문을 읽을 수 없습니다. 필드 누락 또는 형식을 확인해주세요.", request)
     }
 
     @ExceptionHandler(Exception::class)

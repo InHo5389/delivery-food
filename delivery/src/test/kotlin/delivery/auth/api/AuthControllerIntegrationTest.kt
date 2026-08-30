@@ -49,6 +49,30 @@ class AuthControllerIntegrationTest(
     }
 
     @Test
+    fun `요청 본문에 필수 필드가 누락되면 400을 반환한다`() {
+        val invalidJson = """{"password":"password1234","name":"홍길동","phone":"01012345678","role":"CUSTOMER"}"""
+
+        mockMvc.perform(
+            post("/auth/signup")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(invalidJson)
+        )
+            .andExpect(status().isBadRequest)
+            .andExpect(jsonPath("$.code").value("INVALID_INPUT"))
+    }
+
+    @Test
+    fun `요청 본문이 비어있으면 400을 반환한다`() {
+        mockMvc.perform(
+            post("/auth/signup")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("")
+        )
+            .andExpect(status().isBadRequest)
+            .andExpect(jsonPath("$.code").value("INVALID_INPUT"))
+    }
+
+    @Test
     fun `가입한 계정으로 로그인하면 토큰 쌍을 반환한다`() {
         val signupRequest = SignupRequest("login-success@test.com", "password1234", "홍길동", "01012345678", Role.CUSTOMER)
         mockMvc.post("/auth/signup", signupRequest).andExpect(status().isOk)

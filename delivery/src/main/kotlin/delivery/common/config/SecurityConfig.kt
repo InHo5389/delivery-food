@@ -26,6 +26,9 @@ class SecurityConfig {
                 authorize("/shops", permitAll)
                 authorize("/shops/*", permitAll)
                 authorize("/search/**", permitAll)
+                // ★ 사장님 권한 체계(owner_profile)가 아직 없어 임시로 공개 처리.
+                //   실제 권한 검증이 생기면 사장님 전용으로 좁혀야 한다.
+                authorize("/menus/*/image", permitAll)
                 authorize(anyRequest, authenticated)
             }
             httpBasic { disable() }

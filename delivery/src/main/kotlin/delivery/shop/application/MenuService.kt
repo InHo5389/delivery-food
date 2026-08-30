@@ -8,14 +8,19 @@ import delivery.shop.domain.Menu
 import delivery.shop.domain.MenuGroup
 import delivery.shop.domain.ShopErrorCode
 import delivery.shop.infrastructure.MenuGroupRepository
+import delivery.shop.infrastructure.MenuImageStorage
 import delivery.shop.infrastructure.MenuRepository
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.web.multipart.MultipartFile
+
+private val SUPPORTED_IMAGE_EXTENSIONS = setOf("jpg", "jpeg", "png", "webp")
 
 @Service
 class MenuService(
     private val menuGroupRepository: MenuGroupRepository,
     private val menuRepository: MenuRepository,
+    private val menuImageStorage: MenuImageStorage,
 ) {
     @Transactional
     fun createMenuGroup(command: CreateMenuGroupCommand): MenuGroup =
@@ -74,5 +79,26 @@ class MenuService(
     @Transactional
     fun delete(menuId: Long) {
         menuRepository.delete(getMenuById(menuId))
+    }
+
+    @Transactional
+    fun uploadImage(menuId: Long, file: MultipartFile): Menu {
+        val extension = file.originalFilename?.substringAfterLast('.', "")?.lowercase().orEmpty()
+        if (file.isEmpty || extension !in SUPPORTED_IMAGE_EXTENSIONS) {
+            throw BusinessException(ShopErrorCode.INVALID_MENU_IMAGE)
+        }
+        val menu = getMenuById(menuId)
+        val filename = menuImageStorage.store(file)
+        menu.imageUrl = filename
+        return menu
+    }
+
+    fun getImagePath(menuId: Long): java.nio.file.Path {
+        val menu = getMenuById(menuId)
+        val filename = menu.imageUrl ?: throw BusinessException(ShopErrorCode.MENU_IMAGE_NOT_FOUND)
+        if (!menuImageStorage.exists(filename)) {
+            throw BusinessException(ShopErrorCode.MENU_IMAGE_NOT_FOUND)
+        }
+        return menuImageStorage.resolve(filename)
     }
 }

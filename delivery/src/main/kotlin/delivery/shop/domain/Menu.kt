@@ -23,6 +23,9 @@ class Menu(
     @Column
     var description: String? = null,
 
+    @Column(name = "image_url")
+    var imageUrl: String? = null,
+
     @Column(nullable = false)
     var price: Long,
 

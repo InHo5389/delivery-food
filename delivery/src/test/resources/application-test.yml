@@ -1,2 +1,6 @@
 jwt:
   secret: HoYHknZ7xiAD+JYKvE2igTMNFJOWzgAOly4HayXo7U0JnUzoG5MzYUrlhYT8fZ3D
+
+menu:
+  image:
+    storage-dir: build/test-uploads/menu-images

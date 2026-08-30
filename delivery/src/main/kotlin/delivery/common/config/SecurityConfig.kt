@@ -23,6 +23,7 @@ class SecurityConfig {
             sessionManagement { sessionCreationPolicy = SessionCreationPolicy.STATELESS }
             authorizeHttpRequests {
                 authorize("/auth/**", permitAll)
+                authorize("/shops", permitAll)
                 authorize(anyRequest, authenticated)
             }
             httpBasic { disable() }

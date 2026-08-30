@@ -8,6 +8,7 @@ import jakarta.persistence.GeneratedValue
 import jakarta.persistence.GenerationType
 import jakarta.persistence.Id
 import jakarta.persistence.Table
+import java.math.BigDecimal
 import java.time.Instant
 
 @Entity
@@ -21,6 +22,12 @@ class Shop(
 
     @Column(nullable = false)
     var address: String,
+
+    @Column(nullable = false)
+    var latitude: BigDecimal,
+
+    @Column(nullable = false)
+    var longitude: BigDecimal,
 
     @Column(nullable = false)
     var phone: String,
@@ -60,7 +67,9 @@ class Shop(
             name: String,
             address: String,
             phone: String,
+            latitude: BigDecimal = BigDecimal("37.5665000"),
+            longitude: BigDecimal = BigDecimal("126.9780000"),
             status: ShopStatus = ShopStatus.CLOSED,
-        ): Shop = Shop(ownerId, name, address, phone, status).also { it.id = id }
+        ): Shop = Shop(ownerId, name, address, latitude, longitude, phone, status).also { it.id = id }
     }
 }

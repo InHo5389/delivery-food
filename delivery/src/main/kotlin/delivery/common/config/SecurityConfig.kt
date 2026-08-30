@@ -1,13 +1,17 @@
 package delivery.common.config
 
+import delivery.auth.infrastructure.JwtProvider
+import delivery.common.security.JwtAuthenticationFilter
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
+import org.springframework.http.HttpMethod
 import org.springframework.security.config.annotation.web.builders.HttpSecurity
 import org.springframework.security.config.annotation.web.invoke
 import org.springframework.security.config.http.SessionCreationPolicy
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder
 import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.security.web.SecurityFilterChain
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter
 
 @Configuration
 class SecurityConfig {
@@ -17,7 +21,7 @@ class SecurityConfig {
     // ★ 게이트웨이 도입(커밋 10) 전까지 임시 설정.
     //   JWT 서명 검증 필터가 게이트웨이로 이동하면 이 필터체인은 auth-service 전용으로 축소된다.
     @Bean
-    fun securityFilterChain(http: HttpSecurity): SecurityFilterChain {
+    fun securityFilterChain(http: HttpSecurity, jwtProvider: JwtProvider): SecurityFilterChain {
         http {
             csrf { disable() }
             sessionManagement { sessionCreationPolicy = SessionCreationPolicy.STATELESS }
@@ -26,14 +30,15 @@ class SecurityConfig {
                 authorize("/shops", permitAll)
                 authorize("/shops/*", permitAll)
                 authorize("/search/**", permitAll)
-                // ★ 사장님 권한 체계(owner_profile)가 아직 없어 임시로 공개 처리.
-                //   실제 권한 검증이 생기면 사장님 전용으로 좁혀야 한다.
-                authorize("/menus/*/image", permitAll)
+                authorize(HttpMethod.GET, "/menus/*/image", permitAll)
+                authorize("/owner-profile", hasRole("OWNER"))
+                authorize("/owner-profile/**", hasRole("OWNER"))
                 authorize(anyRequest, authenticated)
             }
             httpBasic { disable() }
             formLogin { disable() }
         }
+        http.addFilterBefore(JwtAuthenticationFilter(jwtProvider), UsernamePasswordAuthenticationFilter::class.java)
         return http.build()
     }
 }

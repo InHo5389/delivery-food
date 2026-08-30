@@ -1,11 +1,13 @@
 package delivery.shop.api
 
+import delivery.common.security.AuthenticatedUser
 import delivery.shop.api.dto.MenuImageUploadResponse
 import delivery.shop.application.MenuService
 import org.springframework.core.io.FileSystemResource
 import org.springframework.http.MediaType
 import org.springframework.http.MediaTypeFactory
 import org.springframework.http.ResponseEntity
+import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
@@ -22,8 +24,12 @@ class MenuController(
     private val menuService: MenuService,
 ) {
     @PostMapping("/{menuId}/image")
-    fun uploadImage(@PathVariable menuId: Long, @RequestParam file: MultipartFile): MenuImageUploadResponse {
-        val menu = menuService.uploadImage(menuId, file)
+    fun uploadImage(
+        @PathVariable menuId: Long,
+        @RequestParam file: MultipartFile,
+        @AuthenticationPrincipal requester: AuthenticatedUser,
+    ): MenuImageUploadResponse {
+        val menu = menuService.uploadImage(menuId, file, requester)
         return MenuImageUploadResponse(menu.id!!, menu.imageUrl!!)
     }
 

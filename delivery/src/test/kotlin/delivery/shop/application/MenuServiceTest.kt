@@ -1,14 +1,18 @@
 package delivery.shop.application
 
+import delivery.auth.domain.Role
 import delivery.common.exception.BusinessException
+import delivery.common.security.AuthenticatedUser
 import delivery.shop.application.dto.CreateMenuCommand
 import delivery.shop.application.dto.CreateMenuGroupCommand
 import delivery.shop.application.dto.UpdateMenuCommand
 import delivery.shop.domain.Menu
+import delivery.shop.domain.Shop
 import delivery.shop.domain.ShopErrorCode
 import delivery.shop.infrastructure.MenuGroupRepository
 import delivery.shop.infrastructure.MenuImageStorage
 import delivery.shop.infrastructure.MenuRepository
+import delivery.shop.infrastructure.ShopRepository
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
@@ -16,6 +20,7 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.springframework.mock.web.MockMultipartFile
+import java.math.BigDecimal
 import java.nio.file.Path
 import java.util.Optional
 import kotlin.test.assertEquals
@@ -27,11 +32,14 @@ class MenuServiceTest {
     private val menuGroupRepository = mockk<MenuGroupRepository>()
     private val menuRepository = mockk<MenuRepository>()
     private val menuImageStorage = mockk<MenuImageStorage>()
+    private val shopRepository = mockk<ShopRepository>()
     private lateinit var menuService: MenuService
+
+    private val owner = AuthenticatedUser(userId = 1L, role = Role.OWNER)
 
     @BeforeEach
     fun setUp() {
-        menuService = MenuService(menuGroupRepository, menuRepository, menuImageStorage)
+        menuService = MenuService(menuGroupRepository, menuRepository, menuImageStorage, shopRepository)
     }
 
     @Test
@@ -100,22 +108,51 @@ class MenuServiceTest {
     }
 
     @Test
-    fun `이미지를 업로드하면 imageUrl이 저장된다`() {
+    fun `사장님이 자기 상점 메뉴에 이미지를 업로드하면 imageUrl이 저장된다`() {
         val menu = Menu.withId(1L, 1L, 1L, "짜장면", 8000L, 0)
+        val shop = Shop.withId(1L, 1L, "가게", "서울", "0212345678", BigDecimal("37.5"), BigDecimal("127.0"))
         every { menuRepository.findById(1L) } returns Optional.of(menu)
+        every { shopRepository.findById(1L) } returns Optional.of(shop)
         every { menuImageStorage.store(any()) } returns "abc123.jpg"
         val file = MockMultipartFile("file", "photo.jpg", "image/jpeg", byteArrayOf(1, 2, 3))
 
-        val actual = menuService.uploadImage(1L, file)
+        val actual = menuService.uploadImage(1L, file, owner)
 
         assertEquals("abc123.jpg", actual.imageUrl)
+    }
+
+    @Test
+    fun `다른 사람의 상점 메뉴에 이미지를 업로드하면 예외가 발생한다`() {
+        val menu = Menu.withId(1L, 1L, 1L, "짜장면", 8000L, 0)
+        val shop = Shop.withId(1L, 999L, "가게", "서울", "0212345678", BigDecimal("37.5"), BigDecimal("127.0"))
+        every { menuRepository.findById(1L) } returns Optional.of(menu)
+        every { shopRepository.findById(1L) } returns Optional.of(shop)
+        val file = MockMultipartFile("file", "photo.jpg", "image/jpeg", byteArrayOf(1, 2, 3))
+
+        val exception = assertThrows<BusinessException> { menuService.uploadImage(1L, file, owner) }
+
+        assertEquals(ShopErrorCode.NOT_SHOP_OWNER, exception.errorCode)
+    }
+
+    @Test
+    fun `사장님이 아닌 역할로 업로드하면 예외가 발생한다`() {
+        val menu = Menu.withId(1L, 1L, 1L, "짜장면", 8000L, 0)
+        val shop = Shop.withId(1L, 1L, "가게", "서울", "0212345678", BigDecimal("37.5"), BigDecimal("127.0"))
+        every { menuRepository.findById(1L) } returns Optional.of(menu)
+        every { shopRepository.findById(1L) } returns Optional.of(shop)
+        val customer = AuthenticatedUser(userId = 1L, role = Role.CUSTOMER)
+        val file = MockMultipartFile("file", "photo.jpg", "image/jpeg", byteArrayOf(1, 2, 3))
+
+        val exception = assertThrows<BusinessException> { menuService.uploadImage(1L, file, customer) }
+
+        assertEquals(ShopErrorCode.NOT_SHOP_OWNER, exception.errorCode)
     }
 
     @Test
     fun `지원하지 않는 확장자로 업로드하면 예외가 발생한다`() {
         val file = MockMultipartFile("file", "malware.exe", "application/octet-stream", byteArrayOf(1, 2, 3))
 
-        val exception = assertThrows<BusinessException> { menuService.uploadImage(1L, file) }
+        val exception = assertThrows<BusinessException> { menuService.uploadImage(1L, file, owner) }
 
         assertEquals(ShopErrorCode.INVALID_MENU_IMAGE, exception.errorCode)
     }
@@ -124,7 +161,7 @@ class MenuServiceTest {
     fun `빈 파일을 업로드하면 예외가 발생한다`() {
         val file = MockMultipartFile("file", "photo.jpg", "image/jpeg", ByteArray(0))
 
-        val exception = assertThrows<BusinessException> { menuService.uploadImage(1L, file) }
+        val exception = assertThrows<BusinessException> { menuService.uploadImage(1L, file, owner) }
 
         assertEquals(ShopErrorCode.INVALID_MENU_IMAGE, exception.errorCode)
     }
@@ -133,7 +170,7 @@ class MenuServiceTest {
     fun `확장자가 없는 파일을 업로드하면 예외가 발생한다`() {
         val file = MockMultipartFile("file", "noextension", "application/octet-stream", byteArrayOf(1, 2, 3))
 
-        val exception = assertThrows<BusinessException> { menuService.uploadImage(1L, file) }
+        val exception = assertThrows<BusinessException> { menuService.uploadImage(1L, file, owner) }
 
         assertEquals(ShopErrorCode.INVALID_MENU_IMAGE, exception.errorCode)
     }

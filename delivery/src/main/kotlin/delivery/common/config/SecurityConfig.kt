@@ -27,12 +27,25 @@ class SecurityConfig {
             sessionManagement { sessionCreationPolicy = SessionCreationPolicy.STATELESS }
             authorizeHttpRequests {
                 authorize("/auth/**", permitAll)
-                authorize("/shops", permitAll)
-                authorize("/shops/*", permitAll)
+                authorize(HttpMethod.GET, "/shops", permitAll)
+                authorize(HttpMethod.GET, "/shops/*", permitAll)
                 authorize("/search/**", permitAll)
                 authorize(HttpMethod.GET, "/menus/*/image", permitAll)
                 authorize("/owner-profile", hasRole("OWNER"))
                 authorize("/owner-profile/**", hasRole("OWNER"))
+                authorize(HttpMethod.POST, "/shops", hasRole("OWNER"))
+                authorize(HttpMethod.PUT, "/shops/*", hasRole("OWNER"))
+                authorize(HttpMethod.DELETE, "/shops/*", hasRole("OWNER"))
+                authorize(HttpMethod.POST, "/shops/*/open", hasRole("OWNER"))
+                authorize(HttpMethod.POST, "/shops/*/close", hasRole("OWNER"))
+                authorize(HttpMethod.POST, "/shops/*/menu-groups", hasRole("OWNER"))
+                authorize(HttpMethod.POST, "/shops/*/menus", hasRole("OWNER"))
+                authorize(HttpMethod.POST, "/shops/*/menus/bulk", hasRole("OWNER"))
+                authorize(HttpMethod.PUT, "/menus/*", hasRole("OWNER"))
+                authorize(HttpMethod.DELETE, "/menus/*", hasRole("OWNER"))
+                authorize(HttpMethod.POST, "/menus/*/sold-out", hasRole("OWNER"))
+                authorize(HttpMethod.POST, "/menus/*/in-stock", hasRole("OWNER"))
+                authorize(HttpMethod.POST, "/menus/*/image", hasRole("OWNER"))
                 authorize(anyRequest, authenticated)
             }
             httpBasic { disable() }

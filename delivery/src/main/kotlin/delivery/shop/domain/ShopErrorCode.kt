@@ -17,4 +17,5 @@ enum class ShopErrorCode(
     NOT_SHOP_OWNER(HttpStatus.FORBIDDEN, "해당 상점의 사장님만 처리할 수 있습니다."),
     OWNER_PROFILE_NOT_FOUND(HttpStatus.NOT_FOUND, "사장님 프로필을 찾을 수 없습니다."),
     OWNER_PROFILE_ALREADY_EXISTS(HttpStatus.CONFLICT, "이미 등록된 사장님 프로필이 있습니다."),
+    EMPTY_MENU_LIST(HttpStatus.BAD_REQUEST, "등록할 메뉴 목록이 비어 있습니다."),
 }

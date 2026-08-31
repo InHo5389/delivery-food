@@ -1,6 +1,8 @@
 package delivery.shop.application
 
+import delivery.auth.domain.Role
 import delivery.common.exception.BusinessException
+import delivery.common.security.AuthenticatedUser
 import delivery.shop.application.dto.CreateShopCommand
 import delivery.shop.application.dto.MenuGroupResult
 import delivery.shop.application.dto.NearbyShopQuery
@@ -39,6 +41,7 @@ class ShopServiceTest {
 
     private val latitude = BigDecimal("37.5665000")
     private val longitude = BigDecimal("126.9780000")
+    private val owner = AuthenticatedUser(userId = 1L, role = Role.OWNER)
 
     @BeforeEach
     fun setUp() {
@@ -47,14 +50,36 @@ class ShopServiceTest {
 
     @Test
     fun `상점을 생성하면 저장한다`() {
-        val command = CreateShopCommand(ownerId = 1L, name = "가게", address = "서울", latitude = latitude, longitude = longitude, phone = "0212345678")
+        val command = CreateShopCommand(name = "가게", address = "서울", latitude = latitude, longitude = longitude, phone = "0212345678", minOrderAmount = 0, deliveryFee = 0)
         val savedSlot = slot<Shop>()
         every { shopRepository.save(capture(savedSlot)) } answers { savedSlot.captured }
 
-        val actual = shopService.create(command)
+        val actual = shopService.create(command, owner)
 
         assertEquals("가게", actual.name)
         assertEquals(1L, savedSlot.captured.ownerId)
+    }
+
+    @Test
+    fun `상점을 생성하면 최소주문금액과 배달비가 함께 저장된다`() {
+        val command = CreateShopCommand(name = "가게", address = "서울", latitude = latitude, longitude = longitude, phone = "0212345678", minOrderAmount = 12000, deliveryFee = 3000)
+        val savedSlot = slot<Shop>()
+        every { shopRepository.save(capture(savedSlot)) } answers { savedSlot.captured }
+
+        val actual = shopService.create(command, owner)
+
+        assertEquals(12000L, actual.minOrderAmount)
+        assertEquals(3000L, actual.deliveryFee)
+    }
+
+    @Test
+    fun `사장님이 아닌 역할로 상점을 생성하면 예외가 발생한다`() {
+        val command = CreateShopCommand(name = "가게", address = "서울", latitude = latitude, longitude = longitude, phone = "0212345678", minOrderAmount = 0, deliveryFee = 0)
+        val customer = AuthenticatedUser(userId = 1L, role = Role.CUSTOMER)
+
+        val exception = assertThrows<BusinessException> { shopService.create(command, customer) }
+
+        assertEquals(ShopErrorCode.NOT_SHOP_OWNER, exception.errorCode)
     }
 
     @Test
@@ -80,9 +105,9 @@ class ShopServiceTest {
     fun `상점 정보를 수정하면 필드가 반영된다`() {
         val shop = Shop.withId(1L, 1L, "가게", "서울", "0212345678", latitude, longitude)
         every { shopRepository.findById(1L) } returns Optional.of(shop)
-        val command = UpdateShopCommand(name = "새이름", address = "부산", latitude = latitude, longitude = longitude, phone = "0511111111")
+        val command = UpdateShopCommand(name = "새이름", address = "부산", latitude = latitude, longitude = longitude, phone = "0511111111", minOrderAmount = 0, deliveryFee = 0)
 
-        val actual = shopService.update(1L, command)
+        val actual = shopService.update(1L, command, owner)
 
         assertEquals("새이름", actual.name)
         assertEquals("부산", actual.address)
@@ -90,11 +115,34 @@ class ShopServiceTest {
     }
 
     @Test
+    fun `상점 정보를 수정하면 최소주문금액과 배달비도 반영된다`() {
+        val shop = Shop.withId(1L, 1L, "가게", "서울", "0212345678", latitude, longitude)
+        every { shopRepository.findById(1L) } returns Optional.of(shop)
+        val command = UpdateShopCommand(name = "새이름", address = "부산", latitude = latitude, longitude = longitude, phone = "0511111111", minOrderAmount = 20000, deliveryFee = 5000)
+
+        val actual = shopService.update(1L, command, owner)
+
+        assertEquals(20000L, actual.minOrderAmount)
+        assertEquals(5000L, actual.deliveryFee)
+    }
+
+    @Test
+    fun `다른 사람의 상점을 수정하면 예외가 발생한다`() {
+        val shop = Shop.withId(1L, 999L, "가게", "서울", "0212345678", latitude, longitude)
+        every { shopRepository.findById(1L) } returns Optional.of(shop)
+        val command = UpdateShopCommand(name = "새이름", address = "부산", latitude = latitude, longitude = longitude, phone = "0511111111", minOrderAmount = 0, deliveryFee = 0)
+
+        val exception = assertThrows<BusinessException> { shopService.update(1L, command, owner) }
+
+        assertEquals(ShopErrorCode.NOT_SHOP_OWNER, exception.errorCode)
+    }
+
+    @Test
     fun `open을 호출하면 상점 상태가 OPEN이 된다`() {
         val shop = Shop.withId(1L, 1L, "가게", "서울", "0212345678", latitude, longitude, ShopStatus.CLOSED)
         every { shopRepository.findById(1L) } returns Optional.of(shop)
 
-        shopService.open(1L)
+        shopService.open(1L, owner)
 
         assertTrue(shop.isOpen())
     }
@@ -104,17 +152,27 @@ class ShopServiceTest {
         val shop = Shop.withId(1L, 1L, "가게", "서울", "0212345678", latitude, longitude, ShopStatus.OPEN)
         every { shopRepository.findById(1L) } returns Optional.of(shop)
 
-        shopService.close(1L)
+        shopService.close(1L, owner)
 
         assertFalse(shop.isOpen())
+    }
+
+    @Test
+    fun `다른 사람의 상점을 폐업 처리하면 예외가 발생한다`() {
+        val shop = Shop.withId(1L, 999L, "가게", "서울", "0212345678", latitude, longitude, ShopStatus.OPEN)
+        every { shopRepository.findById(1L) } returns Optional.of(shop)
+
+        val exception = assertThrows<BusinessException> { shopService.close(1L, owner) }
+
+        assertEquals(ShopErrorCode.NOT_SHOP_OWNER, exception.errorCode)
     }
 
     @Test
     fun `주변 영업중 상점을 거리순으로 조회한다`() {
         val query = NearbyShopQuery(latitude = 37.5, longitude = 127.0, limit = 20, offset = 0)
         every { shopSearchRepository.findNearbyOpenShops(37.5, 127.0, 20, 0) } returns listOf(
-            NearbyShopRow(id = 1L, name = "가까운가게", address = "서울", distanceMeters = 120.5),
-            NearbyShopRow(id = 2L, name = "먼가게", address = "서울", distanceMeters = 980.2),
+            NearbyShopRow(id = 1L, name = "가까운가게", address = "서울", minOrderAmount = 12000L, deliveryFee = 3000L, distanceMeters = 120.5),
+            NearbyShopRow(id = 2L, name = "먼가게", address = "서울", minOrderAmount = 15000L, deliveryFee = 4000L, distanceMeters = 980.2),
         )
 
         val actual = shopService.getNearbyOpenShops(query)
@@ -122,6 +180,8 @@ class ShopServiceTest {
         assertEquals(2, actual.size)
         assertEquals("가까운가게", actual[0].name)
         assertEquals(120.5, actual[0].distanceMeters)
+        assertEquals(12000L, actual[0].minOrderAmount)
+        assertEquals(3000L, actual[0].deliveryFee)
     }
 
     @Test

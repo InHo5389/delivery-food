@@ -1,6 +1,8 @@
 package delivery.shop.application
 
+import delivery.auth.domain.Role
 import delivery.common.exception.BusinessException
+import delivery.common.security.AuthenticatedUser
 import delivery.shop.application.dto.CreateShopCommand
 import delivery.shop.application.dto.MenuGroupResult
 import delivery.shop.application.dto.NearbyShopQuery
@@ -23,17 +25,23 @@ class ShopService(
     private val menuService: MenuService,
 ) {
     @Transactional
-    fun create(command: CreateShopCommand): Shop =
-        shopRepository.save(
+    fun create(command: CreateShopCommand, requester: AuthenticatedUser): Shop {
+        if (requester.role != Role.OWNER) {
+            throw BusinessException(ShopErrorCode.NOT_SHOP_OWNER)
+        }
+        return shopRepository.save(
             Shop(
-                ownerId = command.ownerId,
+                ownerId = requester.userId,
                 name = command.name,
                 address = command.address,
                 latitude = command.latitude,
                 longitude = command.longitude,
                 phone = command.phone,
+                minOrderAmount = command.minOrderAmount,
+                deliveryFee = command.deliveryFee,
             )
         )
+    }
 
     fun getById(shopId: Long): Shop =
         shopRepository.findById(shopId).orElseThrow { BusinessException(ShopErrorCode.SHOP_NOT_FOUND) }
@@ -54,31 +62,46 @@ class ShopService(
 
     fun getNearbyOpenShops(query: NearbyShopQuery): List<NearbyShopResult> =
         shopSearchRepository.findNearbyOpenShops(query.latitude, query.longitude, query.limit, query.offset)
-            .map { NearbyShopResult(it.id, it.name, it.address, it.distanceMeters) }
+            .map { NearbyShopResult(it.id, it.name, it.address, it.minOrderAmount, it.deliveryFee, it.distanceMeters) }
 
     @Transactional
-    fun update(shopId: Long, command: UpdateShopCommand): Shop {
+    fun update(shopId: Long, command: UpdateShopCommand, requester: AuthenticatedUser): Shop {
         val shop = getById(shopId)
+        assertOwner(shop, requester)
         shop.name = command.name
         shop.address = command.address
         shop.latitude = command.latitude
         shop.longitude = command.longitude
         shop.phone = command.phone
+        shop.minOrderAmount = command.minOrderAmount
+        shop.deliveryFee = command.deliveryFee
         return shop
     }
 
     @Transactional
-    fun open(shopId: Long) {
-        getById(shopId).open()
+    fun open(shopId: Long, requester: AuthenticatedUser) {
+        val shop = getById(shopId)
+        assertOwner(shop, requester)
+        shop.open()
     }
 
     @Transactional
-    fun close(shopId: Long) {
-        getById(shopId).close()
+    fun close(shopId: Long, requester: AuthenticatedUser) {
+        val shop = getById(shopId)
+        assertOwner(shop, requester)
+        shop.close()
     }
 
     @Transactional
-    fun delete(shopId: Long) {
-        shopRepository.delete(getById(shopId))
+    fun delete(shopId: Long, requester: AuthenticatedUser) {
+        val shop = getById(shopId)
+        assertOwner(shop, requester)
+        shopRepository.delete(shop)
+    }
+
+    private fun assertOwner(shop: Shop, requester: AuthenticatedUser) {
+        if (requester.role != Role.OWNER || shop.ownerId != requester.userId) {
+            throw BusinessException(ShopErrorCode.NOT_SHOP_OWNER)
+        }
     }
 }

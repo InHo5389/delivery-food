@@ -3,6 +3,7 @@ package delivery.shop.application
 import delivery.auth.domain.Role
 import delivery.common.exception.BusinessException
 import delivery.common.security.AuthenticatedUser
+import delivery.shop.application.dto.BulkCreateMenuCommand
 import delivery.shop.application.dto.CreateMenuCommand
 import delivery.shop.application.dto.CreateMenuGroupCommand
 import delivery.shop.application.dto.UpdateMenuCommand
@@ -27,21 +28,29 @@ class MenuService(
     private val shopRepository: ShopRepository,
 ) {
     @Transactional
-    fun createMenuGroup(command: CreateMenuGroupCommand): MenuGroup =
-        menuGroupRepository.save(
+    fun createMenuGroup(command: CreateMenuGroupCommand, requester: AuthenticatedUser): MenuGroup {
+        assertShopOwner(command.shopId, requester)
+        return menuGroupRepository.save(
             MenuGroup(
                 shopId = command.shopId,
                 name = command.name,
                 displayOrder = command.displayOrder,
             )
         )
+    }
 
     fun getMenuGroupsByShopId(shopId: Long): List<MenuGroup> =
         menuGroupRepository.findAllByShopIdOrderByDisplayOrder(shopId)
 
     @Transactional
-    fun createMenu(command: CreateMenuCommand): Menu =
-        menuRepository.save(
+    fun createMenu(command: CreateMenuCommand, requester: AuthenticatedUser): Menu {
+        assertShopOwner(command.shopId, requester)
+        val menuGroup = menuGroupRepository.findById(command.menuGroupId)
+            .orElseThrow { BusinessException(ShopErrorCode.MENU_GROUP_NOT_FOUND) }
+        if (menuGroup.shopId != command.shopId) {
+            throw BusinessException(ShopErrorCode.MENU_GROUP_NOT_FOUND)
+        }
+        return menuRepository.save(
             Menu(
                 shopId = command.shopId,
                 menuGroupId = command.menuGroupId,
@@ -51,6 +60,34 @@ class MenuService(
                 displayOrder = command.displayOrder,
             )
         )
+    }
+
+    @Transactional
+    fun createMenus(command: BulkCreateMenuCommand, requester: AuthenticatedUser): List<Menu> {
+        if (command.menus.isEmpty()) {
+            throw BusinessException(ShopErrorCode.EMPTY_MENU_LIST)
+        }
+        assertShopOwner(command.shopId, requester)
+        val menuGroupIds = command.menus.map { it.menuGroupId }.distinct()
+        val menuGroups = menuGroupRepository.findAllById(menuGroupIds).associateBy { it.id }
+        menuGroupIds.forEach { menuGroupId ->
+            val menuGroup = menuGroups[menuGroupId] ?: throw BusinessException(ShopErrorCode.MENU_GROUP_NOT_FOUND)
+            if (menuGroup.shopId != command.shopId) {
+                throw BusinessException(ShopErrorCode.MENU_GROUP_NOT_FOUND)
+            }
+        }
+        val menus = command.menus.map { item ->
+            Menu(
+                shopId = command.shopId,
+                menuGroupId = item.menuGroupId,
+                name = item.name,
+                description = item.description,
+                price = item.price,
+                displayOrder = item.displayOrder,
+            )
+        }
+        return menuRepository.saveAll(menus)
+    }
 
     fun getMenuById(menuId: Long): Menu =
         menuRepository.findById(menuId).orElseThrow { BusinessException(ShopErrorCode.MENU_NOT_FOUND) }
@@ -61,8 +98,9 @@ class MenuService(
         menuRepository.findAllByMenuGroupIdOrderByDisplayOrder(menuGroupId)
 
     @Transactional
-    fun update(menuId: Long, command: UpdateMenuCommand): Menu {
+    fun update(menuId: Long, command: UpdateMenuCommand, requester: AuthenticatedUser): Menu {
         val menu = getMenuById(menuId)
+        assertShopOwner(menu.shopId, requester)
         menu.name = command.name
         menu.description = command.description
         menu.price = command.price
@@ -71,18 +109,24 @@ class MenuService(
     }
 
     @Transactional
-    fun markSoldOut(menuId: Long) {
-        getMenuById(menuId).soldOut = true
+    fun markSoldOut(menuId: Long, requester: AuthenticatedUser) {
+        val menu = getMenuById(menuId)
+        assertShopOwner(menu.shopId, requester)
+        menu.soldOut = true
     }
 
     @Transactional
-    fun markInStock(menuId: Long) {
-        getMenuById(menuId).soldOut = false
+    fun markInStock(menuId: Long, requester: AuthenticatedUser) {
+        val menu = getMenuById(menuId)
+        assertShopOwner(menu.shopId, requester)
+        menu.soldOut = false
     }
 
     @Transactional
-    fun delete(menuId: Long) {
-        menuRepository.delete(getMenuById(menuId))
+    fun delete(menuId: Long, requester: AuthenticatedUser) {
+        val menu = getMenuById(menuId)
+        assertShopOwner(menu.shopId, requester)
+        menuRepository.delete(menu)
     }
 
     @Transactional

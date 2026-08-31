@@ -32,6 +32,12 @@ class Shop(
     @Column(nullable = false)
     var phone: String,
 
+    @Column(name = "min_order_amount", nullable = false)
+    var minOrderAmount: Long = 0,
+
+    @Column(name = "delivery_fee", nullable = false)
+    var deliveryFee: Long = 0,
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     var status: ShopStatus = ShopStatus.CLOSED,
@@ -70,6 +76,8 @@ class Shop(
             latitude: BigDecimal = BigDecimal("37.5665000"),
             longitude: BigDecimal = BigDecimal("126.9780000"),
             status: ShopStatus = ShopStatus.CLOSED,
-        ): Shop = Shop(ownerId, name, address, latitude, longitude, phone, status).also { it.id = id }
+            minOrderAmount: Long = 0,
+            deliveryFee: Long = 0,
+        ): Shop = Shop(ownerId, name, address, latitude, longitude, phone, minOrderAmount, deliveryFee, status).also { it.id = id }
     }
 }

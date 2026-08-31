@@ -51,4 +51,29 @@ class ShopTest {
         assertEquals(ShopStatus.CLOSED, shop.status)
         assertFalse(shop.isOpen())
     }
+
+    @Test
+    fun `최소주문금액과 배달비를 지정하지 않으면 기본값 0이다`() {
+        val shop = Shop(ownerId = 1L, name = "가게", address = "서울", latitude = java.math.BigDecimal("37.5665000"), longitude = java.math.BigDecimal("126.9780000"), phone = "0212345678")
+
+        assertEquals(0L, shop.minOrderAmount)
+        assertEquals(0L, shop.deliveryFee)
+    }
+
+    @Test
+    fun `최소주문금액과 배달비를 지정하면 반영된다`() {
+        val shop = Shop(
+            ownerId = 1L,
+            name = "가게",
+            address = "서울",
+            latitude = java.math.BigDecimal("37.5665000"),
+            longitude = java.math.BigDecimal("126.9780000"),
+            phone = "0212345678",
+            minOrderAmount = 12000L,
+            deliveryFee = 3000L,
+        )
+
+        assertEquals(12000L, shop.minOrderAmount)
+        assertEquals(3000L, shop.deliveryFee)
+    }
 }

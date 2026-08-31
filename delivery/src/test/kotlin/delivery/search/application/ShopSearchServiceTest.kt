@@ -24,13 +24,15 @@ class ShopSearchServiceTest {
     fun `키워드로 검색하면 결과를 반환한다`() {
         val query = ShopKeywordSearchQuery(keyword = "교촌", limit = 20, offset = 0)
         every { shopKeywordSearchRepository.searchByKeyword("교촌", 20, 0) } returns listOf(
-            ShopKeywordSearchRow(id = 1L, name = "교촌치킨", address = "서울"),
+            ShopKeywordSearchRow(id = 1L, name = "교촌치킨", address = "서울", minOrderAmount = 12000L, deliveryFee = 3000L),
         )
 
         val actual = shopSearchService.searchByKeyword(query)
 
         assertEquals(1, actual.size)
         assertEquals("교촌치킨", actual[0].name)
+        assertEquals(12000L, actual[0].minOrderAmount)
+        assertEquals(3000L, actual[0].deliveryFee)
     }
 
     @Test

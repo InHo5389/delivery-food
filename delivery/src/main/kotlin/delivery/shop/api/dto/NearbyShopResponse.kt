@@ -6,10 +6,19 @@ data class NearbyShopResponse(
     val shopId: Long,
     val name: String,
     val address: String,
+    val minOrderAmount: Long,
+    val deliveryFee: Long,
     val distanceMeters: Double,
 ) {
     companion object {
         fun from(result: NearbyShopResult): NearbyShopResponse =
-            NearbyShopResponse(result.shopId, result.name, result.address, result.distanceMeters)
+            NearbyShopResponse(
+                result.shopId,
+                result.name,
+                result.address,
+                result.minOrderAmount,
+                result.deliveryFee,
+                result.distanceMeters,
+            )
     }
 }

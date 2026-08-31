@@ -11,5 +11,7 @@ data class NearbyShopResult(
     val shopId: Long,
     val name: String,
     val address: String,
+    val minOrderAmount: Long,
+    val deliveryFee: Long,
     val distanceMeters: Double,
 )

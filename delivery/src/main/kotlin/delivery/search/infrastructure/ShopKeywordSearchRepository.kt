@@ -12,7 +12,7 @@ class ShopKeywordSearchRepository(
     fun searchByKeyword(keyword: String, limit: Int, offset: Int): List<ShopKeywordSearchRow> =
         jdbcTemplate.query(
             """
-            SELECT id, name, address
+            SELECT id, name, address, min_order_amount, delivery_fee
             FROM shop
             WHERE status = 'OPEN'
               AND name LIKE CONCAT('%', ?, '%')
@@ -24,6 +24,8 @@ class ShopKeywordSearchRepository(
                     id = rs.getLong("id"),
                     name = rs.getString("name"),
                     address = rs.getString("address"),
+                    minOrderAmount = rs.getLong("min_order_amount"),
+                    deliveryFee = rs.getLong("delivery_fee"),
                 )
             },
             keyword, limit, offset,

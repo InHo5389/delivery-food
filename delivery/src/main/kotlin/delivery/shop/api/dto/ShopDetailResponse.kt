@@ -9,6 +9,8 @@ data class ShopDetailResponse(
     val name: String,
     val address: String,
     val phone: String,
+    val minOrderAmount: Long,
+    val deliveryFee: Long,
     val status: String,
     val businessHours: List<BusinessHoursResponse>,
     val menuGroups: List<MenuGroupResponse>,
@@ -20,6 +22,8 @@ data class ShopDetailResponse(
                 name = result.shop.name,
                 address = result.shop.address,
                 phone = result.shop.phone,
+                minOrderAmount = result.shop.minOrderAmount,
+                deliveryFee = result.shop.deliveryFee,
                 status = result.shop.status.name,
                 businessHours = result.businessHours.map {
                     BusinessHoursResponse(it.dayOfWeek, it.openTime, it.closeTime)

@@ -11,5 +11,5 @@ class ShopSearchService(
 ) {
     fun searchByKeyword(query: ShopKeywordSearchQuery): List<ShopKeywordSearchResult> =
         shopKeywordSearchRepository.searchByKeyword(query.keyword, query.limit, query.offset)
-            .map { ShopKeywordSearchResult(it.id, it.name, it.address) }
+            .map { ShopKeywordSearchResult(it.id, it.name, it.address, it.minOrderAmount, it.deliveryFee) }
 }

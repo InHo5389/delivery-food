@@ -22,13 +22,13 @@ class ShopSearchRepositoryIntegrationTest(
     fun `영업중인 상점만 거리순으로 조회한다`() {
         val ownerId = System.nanoTime()
         val near = shopRepository.save(
-            Shop(ownerId, "가까운가게", "서울", BigDecimal("37.5670000"), BigDecimal("126.9785000"), "0212345678", ShopStatus.OPEN)
+            Shop(ownerId, "가까운가게", "서울", BigDecimal("37.5670000"), BigDecimal("126.9785000"), "0212345678", status = ShopStatus.OPEN)
         )
         val far = shopRepository.save(
-            Shop(ownerId, "먼가게", "부산", BigDecimal("35.1796000"), BigDecimal("129.0756000"), "0512345678", ShopStatus.OPEN)
+            Shop(ownerId, "먼가게", "부산", BigDecimal("35.1796000"), BigDecimal("129.0756000"), "0512345678", status = ShopStatus.OPEN)
         )
         shopRepository.save(
-            Shop(ownerId, "영업안함", "서울", BigDecimal("37.5666000"), BigDecimal("126.9781000"), "0298765432", ShopStatus.CLOSED)
+            Shop(ownerId, "영업안함", "서울", BigDecimal("37.5666000"), BigDecimal("126.9781000"), "0298765432", status = ShopStatus.CLOSED)
         )
 
         val actual = shopSearchRepository.findNearbyOpenShops(originLat, originLng, limit = 100, offset = 0)
@@ -45,7 +45,7 @@ class ShopSearchRepositoryIntegrationTest(
     fun `영업 종료 상점은 결과에서 제외된다`() {
         val ownerId = System.nanoTime()
         val closed = shopRepository.save(
-            Shop(ownerId, "영업안함", "서울", BigDecimal("37.5666000"), BigDecimal("126.9781000"), "0298765432", ShopStatus.CLOSED)
+            Shop(ownerId, "영업안함", "서울", BigDecimal("37.5666000"), BigDecimal("126.9781000"), "0298765432", status = ShopStatus.CLOSED)
         )
 
         val actual = shopSearchRepository.findNearbyOpenShops(originLat, originLng, limit = 100, offset = 0)
@@ -58,7 +58,7 @@ class ShopSearchRepositoryIntegrationTest(
         val ownerId = System.nanoTime()
         repeat(5) { i ->
             shopRepository.save(
-                Shop(ownerId + i, "가게$i", "서울", BigDecimal("37.566${i}000"), BigDecimal("126.978${i}000"), "021234567$i", ShopStatus.OPEN)
+                Shop(ownerId + i, "가게$i", "서울", BigDecimal("37.566${i}000"), BigDecimal("126.978${i}000"), "021234567$i", status = ShopStatus.OPEN)
             )
         }
 
@@ -72,7 +72,7 @@ class ShopSearchRepositoryIntegrationTest(
         val ownerId = System.nanoTime()
         repeat(3) { i ->
             shopRepository.save(
-                Shop(ownerId + i, "페이지가게$i", "서울", BigDecimal("37.566${i}000"), BigDecimal("126.978${i}000"), "031234567$i", ShopStatus.OPEN)
+                Shop(ownerId + i, "페이지가게$i", "서울", BigDecimal("37.566${i}000"), BigDecimal("126.978${i}000"), "031234567$i", status = ShopStatus.OPEN)
             )
         }
 

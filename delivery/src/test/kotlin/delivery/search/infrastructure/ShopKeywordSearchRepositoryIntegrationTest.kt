@@ -19,10 +19,10 @@ class ShopKeywordSearchRepositoryIntegrationTest(
     fun `상점명에 키워드가 포함되면 검색된다`() {
         val ownerId = System.nanoTime()
         val matched = shopRepository.save(
-            Shop(ownerId, "교촌치킨 강남점", "서울", BigDecimal("37.5665000"), BigDecimal("126.9780000"), "0212345678", ShopStatus.OPEN)
+            Shop(ownerId, "교촌치킨 강남점", "서울", BigDecimal("37.5665000"), BigDecimal("126.9780000"), "0212345678", status = ShopStatus.OPEN)
         )
         shopRepository.save(
-            Shop(ownerId + 1, "김밥천국", "서울", BigDecimal("37.5665000"), BigDecimal("126.9780000"), "0298765432", ShopStatus.OPEN)
+            Shop(ownerId + 1, "김밥천국", "서울", BigDecimal("37.5665000"), BigDecimal("126.9780000"), "0298765432", status = ShopStatus.OPEN)
         )
 
         val actual = shopKeywordSearchRepository.searchByKeyword("교촌", limit = 100, offset = 0)
@@ -35,7 +35,7 @@ class ShopKeywordSearchRepositoryIntegrationTest(
     fun `상점명 중간에 포함된 키워드도 검색된다`() {
         val ownerId = System.nanoTime()
         val matched = shopRepository.save(
-            Shop(ownerId, "강남교촌치킨점", "서울", BigDecimal("37.5665000"), BigDecimal("126.9780000"), "0212345671", ShopStatus.OPEN)
+            Shop(ownerId, "강남교촌치킨점", "서울", BigDecimal("37.5665000"), BigDecimal("126.9780000"), "0212345671", status = ShopStatus.OPEN)
         )
 
         val actual = shopKeywordSearchRepository.searchByKeyword("교촌", limit = 100, offset = 0)
@@ -47,7 +47,7 @@ class ShopKeywordSearchRepositoryIntegrationTest(
     fun `영업 종료된 상점은 검색되지 않는다`() {
         val ownerId = System.nanoTime()
         val closed = shopRepository.save(
-            Shop(ownerId, "교촌치킨휴업점", "서울", BigDecimal("37.5665000"), BigDecimal("126.9780000"), "0212345672", ShopStatus.CLOSED)
+            Shop(ownerId, "교촌치킨휴업점", "서울", BigDecimal("37.5665000"), BigDecimal("126.9780000"), "0212345672", status = ShopStatus.CLOSED)
         )
 
         val actual = shopKeywordSearchRepository.searchByKeyword("교촌", limit = 100, offset = 0)
@@ -67,7 +67,7 @@ class ShopKeywordSearchRepositoryIntegrationTest(
         val ownerId = System.nanoTime()
         repeat(5) { i ->
             shopRepository.save(
-                Shop(ownerId + i, "한정판키워드가게$i", "서울", BigDecimal("37.5665000"), BigDecimal("126.9780000"), "021234500$i", ShopStatus.OPEN)
+                Shop(ownerId + i, "한정판키워드가게$i", "서울", BigDecimal("37.5665000"), BigDecimal("126.9780000"), "021234500$i", status = ShopStatus.OPEN)
             )
         }
 

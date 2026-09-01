@@ -24,21 +24,45 @@ class ShopSearchRepositoryIntegrationTest(
         val near = shopRepository.save(
             Shop(ownerId, "가까운가게", "서울", BigDecimal("37.5670000"), BigDecimal("126.9785000"), "0212345678", status = ShopStatus.OPEN)
         )
-        val far = shopRepository.save(
-            Shop(ownerId, "먼가게", "부산", BigDecimal("35.1796000"), BigDecimal("129.0756000"), "0512345678", status = ShopStatus.OPEN)
+        val medium = shopRepository.save(
+            Shop(ownerId, "중간가게", "서울", BigDecimal("37.5700000"), BigDecimal("126.9820000"), "0212345679", status = ShopStatus.OPEN)
         )
         shopRepository.save(
             Shop(ownerId, "영업안함", "서울", BigDecimal("37.5666000"), BigDecimal("126.9781000"), "0298765432", status = ShopStatus.CLOSED)
         )
 
-        val actual = shopSearchRepository.findNearbyOpenShops(originLat, originLng, limit = 100, offset = 0)
+        val actual = shopSearchRepository.findNearbyOpenShops(originLat, originLng, limit = 100, offset = 0, radiusMeters = 3000.0)
 
         val nearIndex = actual.indexOfFirst { it.id == near.id }
-        val farIndex = actual.indexOfFirst { it.id == far.id }
+        val mediumIndex = actual.indexOfFirst { it.id == medium.id }
         assertTrue(nearIndex in actual.indices)
-        assertTrue(farIndex in actual.indices)
-        assertTrue(nearIndex < farIndex)
-        assertTrue(actual[nearIndex].distanceMeters < actual[farIndex].distanceMeters)
+        assertTrue(mediumIndex in actual.indices)
+        assertTrue(nearIndex < mediumIndex)
+        assertTrue(actual[nearIndex].distanceMeters < actual[mediumIndex].distanceMeters)
+    }
+
+    @Test
+    fun `기본 반경(3km) 밖의 상점은 결과에서 제외된다`() {
+        val ownerId = System.nanoTime()
+        val far = shopRepository.save(
+            Shop(ownerId, "먼가게", "부산", BigDecimal("35.1796000"), BigDecimal("129.0756000"), "0512345678", status = ShopStatus.OPEN)
+        )
+
+        val actual = shopSearchRepository.findNearbyOpenShops(originLat, originLng, limit = 100, offset = 0)
+
+        assertTrue(actual.none { it.id == far.id })
+    }
+
+    @Test
+    fun `radiusMeters를 넓게 지정하면 반경 밖 상점도 포함된다`() {
+        val ownerId = System.nanoTime()
+        val far = shopRepository.save(
+            Shop(ownerId, "먼가게", "부산", BigDecimal("35.1796000"), BigDecimal("129.0756000"), "0512345678", status = ShopStatus.OPEN)
+        )
+
+        val actual = shopSearchRepository.findNearbyOpenShops(originLat, originLng, limit = 100, offset = 0, radiusMeters = 500_000.0)
+
+        assertTrue(actual.any { it.id == far.id })
     }
 
     @Test

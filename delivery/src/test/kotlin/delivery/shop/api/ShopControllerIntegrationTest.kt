@@ -98,6 +98,28 @@ class ShopControllerIntegrationTest(
     }
 
     @Test
+    fun `기본 반경(3km) 밖의 상점은 근처 목록에서 제외된다`() {
+        val owner = signupOwner("shopdetail4@test.com")
+        val farShop = shopService.create(
+            CreateShopCommand(
+                name = "부산가게",
+                address = "부산",
+                latitude = BigDecimal("35.1796000"),
+                longitude = BigDecimal("129.0756000"),
+                phone = "0512345678",
+                minOrderAmount = 0,
+                deliveryFee = 0,
+            ),
+            owner,
+        )
+        shopService.open(farShop.id!!, owner)
+
+        mockMvc.perform(get("/shops").param("latitude", "37.5665").param("longitude", "126.9780"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$[?(@.shopId == ${farShop.id})]").isEmpty)
+    }
+
+    @Test
     fun `존재하지 않는 상점을 조회하면 404를 반환한다`() {
         mockMvc.perform(get("/shops/999999"))
             .andExpect(status().isNotFound)

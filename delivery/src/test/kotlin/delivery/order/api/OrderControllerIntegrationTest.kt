@@ -147,8 +147,60 @@ class OrderControllerIntegrationTest(
 
         mockMvc.perform(get("/orders").header("Authorization", "Bearer ${customer.token}"))
             .andExpect(status().isOk)
-            .andExpect(jsonPath("$.length()").value(1))
-            .andExpect(jsonPath("$[0].menuName").value("짜장면"))
+            .andExpect(jsonPath("$.orders.length()").value(1))
+            .andExpect(jsonPath("$.orders[0].menuName").value("짜장면"))
+            .andExpect(jsonPath("$.totalElements").value(1))
+            .andExpect(jsonPath("$.totalPages").value(1))
+    }
+
+    @Test
+    fun `주문 내역은 페이지 크기만큼만 반환되고 뒤 페이지에서 나머지가 조회된다`() {
+        val shopWithMenu = setUpOpenShopWithMenu()
+        val customer = signup("order-customer9@test.com", Role.CUSTOMER)
+        repeat(3) {
+            addToCart(customer.token, shopWithMenu.shopId, shopWithMenu.menu)
+            mockMvc.perform(
+                post("/orders").header("Authorization", "Bearer ${customer.token}")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("""{"customerName":"홍길동","customerPhone":"01099998888"}""")
+            ).andExpect(status().isCreated)
+        }
+
+        mockMvc.perform(get("/orders?size=2&page=0").header("Authorization", "Bearer ${customer.token}"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.orders.length()").value(2))
+            .andExpect(jsonPath("$.totalElements").value(3))
+            .andExpect(jsonPath("$.totalPages").value(2))
+
+        mockMvc.perform(get("/orders?size=2&page=1").header("Authorization", "Bearer ${customer.token}"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.orders.length()").value(1))
+    }
+
+    @Test
+    fun `주문이 없으면 빈 목록과 totalElements 0을 반환한다`() {
+        val customer = signup("order-customer10@test.com", Role.CUSTOMER)
+
+        mockMvc.perform(get("/orders").header("Authorization", "Bearer ${customer.token}"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.orders.length()").value(0))
+            .andExpect(jsonPath("$.totalElements").value(0))
+    }
+
+    @Test
+    fun `size가 범위를 벗어나면 400을 반환한다`() {
+        val customer = signup("order-customer11@test.com", Role.CUSTOMER)
+
+        mockMvc.perform(get("/orders?size=0").header("Authorization", "Bearer ${customer.token}"))
+            .andExpect(status().isBadRequest)
+    }
+
+    @Test
+    fun `page가 음수이면 400을 반환한다`() {
+        val customer = signup("order-customer12@test.com", Role.CUSTOMER)
+
+        mockMvc.perform(get("/orders?page=-1").header("Authorization", "Bearer ${customer.token}"))
+            .andExpect(status().isBadRequest)
     }
 
     @Test

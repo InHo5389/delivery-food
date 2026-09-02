@@ -5,6 +5,7 @@ import delivery.common.security.AuthenticatedUser
 import delivery.auth.domain.Role
 import delivery.order.application.dto.CartResult
 import delivery.order.application.dto.CreateOrderCommand
+import delivery.order.application.dto.OrderHistoryQuery
 import delivery.order.domain.Cart
 import delivery.order.domain.CartItem
 import delivery.order.domain.Order
@@ -24,6 +25,8 @@ import io.mockk.verify
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
+import org.springframework.data.domain.PageImpl
+import org.springframework.data.domain.PageRequest
 import java.math.BigDecimal
 import java.util.Optional
 import kotlin.test.assertEquals
@@ -196,5 +199,41 @@ class OrderServiceTest {
         }
 
         assertEquals(OrderErrorCode.ORDER_NOT_FOUND, exception.errorCode)
+    }
+
+    @Test
+    fun `주문 내역을 페이지 단위로 조회한다`() {
+        val order = Order.withId(1L, customerId, shopId, menuId, "짜장면", 8000L, 1, "홍길동", "01011112222")
+        val pageResult = PageImpl(listOf(order), PageRequest.of(0, 20), 1)
+        every { orderRepository.findAllByCustomerIdOrderByIdDesc(customerId, PageRequest.of(0, 20)) } returns pageResult
+
+        val actual = orderService.getMyOrderHistory(OrderHistoryQuery(customerId, page = 0, size = 20))
+
+        assertEquals(1, actual.orders.size)
+        assertEquals(1, actual.totalElements.toInt())
+        assertEquals(1, actual.totalPages)
+    }
+
+    @Test
+    fun `주문이 없으면 빈 목록을 반환한다`() {
+        val pageResult = PageImpl<Order>(emptyList(), PageRequest.of(0, 20), 0)
+        every { orderRepository.findAllByCustomerIdOrderByIdDesc(customerId, PageRequest.of(0, 20)) } returns pageResult
+
+        val actual = orderService.getMyOrderHistory(OrderHistoryQuery(customerId, page = 0, size = 20))
+
+        assertEquals(0, actual.orders.size)
+        assertEquals(0, actual.totalElements.toInt())
+    }
+
+    @Test
+    fun `두 번째 페이지를 요청하면 offset이 반영된다`() {
+        val order = Order.withId(3L, customerId, shopId, menuId, "짬뽕", 9000L, 1, "홍길동", "01011112222")
+        val pageResult = PageImpl(listOf(order), PageRequest.of(1, 2), 3)
+        every { orderRepository.findAllByCustomerIdOrderByIdDesc(customerId, PageRequest.of(1, 2)) } returns pageResult
+
+        val actual = orderService.getMyOrderHistory(OrderHistoryQuery(customerId, page = 1, size = 2))
+
+        assertEquals(1, actual.page)
+        assertEquals(2, actual.totalPages)
     }
 }

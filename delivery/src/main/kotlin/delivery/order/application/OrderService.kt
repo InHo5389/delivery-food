@@ -3,6 +3,8 @@ package delivery.order.application
 import delivery.common.exception.BusinessException
 import delivery.common.security.AuthenticatedUser
 import delivery.order.application.dto.CreateOrderCommand
+import delivery.order.application.dto.OrderHistoryQuery
+import delivery.order.application.dto.OrderHistoryResult
 import delivery.order.application.dto.OrderResult
 import delivery.order.application.dto.RequestPaymentCommand
 import delivery.order.domain.CartErrorCode
@@ -13,6 +15,7 @@ import delivery.order.domain.PaymentStatus
 import delivery.order.infrastructure.OrderRepository
 import delivery.shop.application.MenuService
 import delivery.shop.application.ShopService
+import org.springframework.data.domain.PageRequest
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 
@@ -95,10 +98,21 @@ class OrderService(
         return OrderResult(orders, payment)
     }
 
-    // ⚠️ 의도적 구식 구현 — Phase 3 A-4에서 fetch join/batch fetch로 개선 예정.
-    //   목록 조회 시 각 주문의 연관 정보를 별도로 조회하면 N+1이 발생한다(주문 자체는
-    //   단일 테이블 조회라 지금 당장은 N+1이 없지만, Phase 1 다른 화면에서 재현한다).
-    fun getMyOrders(customerId: Long): List<Order> = orderRepository.findAllByCustomerId(customerId)
+    // ⚠️ 의도적 구식 구현 — Phase 3 A-3에서 커서 기반 페이징으로 개선 예정.
+    //   OFFSET 페이징은 페이지가 깊어질수록 앞의 행을 읽고 버려 선형적으로 느려진다.
+    fun getMyOrderHistory(query: OrderHistoryQuery): OrderHistoryResult {
+        val page = orderRepository.findAllByCustomerIdOrderByIdDesc(
+            query.customerId,
+            PageRequest.of(query.page, query.size),
+        )
+        return OrderHistoryResult(
+            orders = page.content,
+            page = query.page,
+            size = query.size,
+            totalElements = page.totalElements,
+            totalPages = page.totalPages,
+        )
+    }
 
     fun getOrder(orderId: Long, requester: AuthenticatedUser): Order {
         val order = orderRepository.findById(orderId).orElseThrow { BusinessException(OrderErrorCode.ORDER_NOT_FOUND) }

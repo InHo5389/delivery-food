@@ -46,6 +46,11 @@ class SecurityConfig {
                 authorize(HttpMethod.POST, "/menus/*/sold-out", hasRole("OWNER"))
                 authorize(HttpMethod.POST, "/menus/*/in-stock", hasRole("OWNER"))
                 authorize(HttpMethod.POST, "/menus/*/image", hasRole("OWNER"))
+                authorize("/cart", hasRole("CUSTOMER"))
+                authorize("/cart/**", hasRole("CUSTOMER"))
+                authorize(HttpMethod.POST, "/orders", hasRole("CUSTOMER"))
+                authorize(HttpMethod.GET, "/orders", hasRole("CUSTOMER"))
+                authorize(HttpMethod.GET, "/orders/*", hasRole("CUSTOMER"))
                 authorize(anyRequest, authenticated)
             }
             httpBasic { disable() }

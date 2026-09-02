@@ -32,4 +32,20 @@ class PaymentService(
 
     fun getByOrderId(orderId: Long): Payment =
         paymentRepository.findByOrderId(orderId) ?: throw BusinessException(PaymentErrorCode.PAYMENT_NOT_FOUND)
+
+    @Transactional
+    fun refund(orderId: Long): Payment {
+        val payment = getByOrderId(orderId)
+        // 상태 전이 가능 여부를 먼저 확인한다 — FAILED 등 환불 대상이 아닌 결제에 대해
+        // PG 환불 API를 호출하지 않기 위해서다(불필요한 외부 호출 방지).
+        if (!payment.status.canTransitionTo(PaymentStatus.REFUNDED)) {
+            throw BusinessException(PaymentErrorCode.INVALID_PAYMENT_STATUS_TRANSITION)
+        }
+        val refunded = mockPgClient.refund(orderId, payment.amount)
+        if (!refunded) {
+            throw BusinessException(PaymentErrorCode.REFUND_FAILED)
+        }
+        payment.transitionTo(PaymentStatus.REFUNDED)
+        return payment
+    }
 }

@@ -11,9 +11,8 @@ import jakarta.persistence.Id
 import jakarta.persistence.Table
 import java.time.Instant
 
-// order_id는 같은 order 모듈 내 orders 테이블을 가리키지만, 아직 OrderRepository(저장 계층)가
-// 없는 시점이라 FK는 걸지 않았다(V11 마이그레이션 참조). 주문 1건당 결제는 1건이라
-// order_id에 유니크 제약을 둔다.
+// order_id는 같은 order 모듈 내 참조라 FK를 허용한다(1-8절 — 모듈 간 FK만 금지).
+// 주문 1건당 결제는 1건이라 order_id에 유니크 제약을 둔다.
 @Entity
 @Table(name = "payment")
 class Payment(

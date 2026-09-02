@@ -32,8 +32,14 @@ class PaymentStatusTest {
     }
 
     @Test
-    fun `APPROVED는 최종 상태라 어디로도 전이할 수 없다`() {
+    fun `APPROVED에서 REFUNDED로 전이할 수 있다`() {
+        assertTrue(PaymentStatus.APPROVED.canTransitionTo(PaymentStatus.REFUNDED))
+    }
+
+    @Test
+    fun `APPROVED에서 REFUNDED 외에는 전이할 수 없다`() {
         for (target in PaymentStatus.entries) {
+            if (target == PaymentStatus.REFUNDED) continue
             assertFalse(PaymentStatus.APPROVED.canTransitionTo(target))
         }
     }
@@ -42,6 +48,13 @@ class PaymentStatusTest {
     fun `FAILED는 최종 상태라 어디로도 전이할 수 없다`() {
         for (target in PaymentStatus.entries) {
             assertFalse(PaymentStatus.FAILED.canTransitionTo(target))
+        }
+    }
+
+    @Test
+    fun `REFUNDED는 최종 상태라 어디로도 전이할 수 없다`() {
+        for (target in PaymentStatus.entries) {
+            assertFalse(PaymentStatus.REFUNDED.canTransitionTo(target))
         }
     }
 

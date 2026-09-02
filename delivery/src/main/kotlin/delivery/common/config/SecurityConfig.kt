@@ -51,6 +51,7 @@ class SecurityConfig {
                 authorize(HttpMethod.POST, "/orders", hasRole("CUSTOMER"))
                 authorize(HttpMethod.GET, "/orders", hasRole("CUSTOMER"))
                 authorize(HttpMethod.GET, "/orders/*", hasRole("CUSTOMER"))
+                authorize(HttpMethod.POST, "/orders/*/cancel", hasRole("CUSTOMER"))
                 authorize(anyRequest, authenticated)
             }
             httpBasic { disable() }

@@ -3,6 +3,7 @@ package delivery.order.application
 import delivery.common.exception.BusinessException
 import delivery.common.security.AuthenticatedUser
 import delivery.order.application.dto.CreateOrderCommand
+import delivery.order.application.dto.OrderHistoryItem
 import delivery.order.application.dto.OrderHistoryQuery
 import delivery.order.application.dto.OrderHistoryResult
 import delivery.order.application.dto.OrderResult
@@ -10,8 +11,10 @@ import delivery.order.application.dto.RequestPaymentCommand
 import delivery.order.domain.CartErrorCode
 import delivery.order.domain.Order
 import delivery.order.domain.OrderErrorCode
+import delivery.order.domain.OrderItem
 import delivery.order.domain.OrderStatus
 import delivery.order.domain.PaymentStatus
+import delivery.order.infrastructure.OrderItemRepository
 import delivery.order.infrastructure.OrderRepository
 import delivery.shop.application.MenuService
 import delivery.shop.application.ShopService
@@ -27,6 +30,7 @@ import org.springframework.transaction.annotation.Transactional
 @Service
 class OrderService(
     private val orderRepository: OrderRepository,
+    private val orderItemRepository: OrderItemRepository,
     private val cartService: CartService,
     private val paymentService: PaymentService,
     private val shopService: ShopService,
@@ -67,46 +71,57 @@ class OrderService(
             throw BusinessException(OrderErrorCode.BELOW_MIN_ORDER_AMOUNT)
         }
 
+        val order = orderRepository.save(
+            Order(
+                customerId = command.customerId,
+                shopId = cart.cart.shopId,
+                customerName = command.customerName,
+                customerPhone = command.customerPhone,
+            )
+        )
+
         // ⚠️ 의도적 구식 구현 — Phase 3 B-6에서 JDBC batch insert로 개선 예정.
         //   장바구니 항목 수만큼 INSERT가 건별로 나간다.
-        val orders = cart.items.map { item ->
-            orderRepository.save(
-                Order(
-                    customerId = command.customerId,
-                    shopId = cart.cart.shopId,
+        val items = cart.items.map { item ->
+            orderItemRepository.save(
+                OrderItem(
+                    orderId = order.id!!,
                     menuId = item.menuId,
                     menuName = item.menuName,
                     menuPrice = item.menuPrice,
                     quantity = item.quantity,
-                    customerName = command.customerName,
-                    customerPhone = command.customerPhone,
                 )
             )
         }
 
         val payment = paymentService.requestPayment(
-            RequestPaymentCommand(orderId = orders.first().id!!, amount = cart.totalPrice)
+            RequestPaymentCommand(orderId = order.id!!, amount = cart.totalPrice)
         )
 
         val nextStatus = if (payment.status == PaymentStatus.APPROVED) OrderStatus.PAID else OrderStatus.PAYMENT_FAILED
-        orders.forEach { it.transitionTo(nextStatus) }
+        order.transitionTo(nextStatus)
 
         if (nextStatus == OrderStatus.PAID) {
             cartService.clear(command.customerId)
         }
 
-        return OrderResult(orders, payment)
+        return OrderResult(order, items, payment)
     }
 
     // ⚠️ 의도적 구식 구현 — Phase 3 A-3에서 커서 기반 페이징으로 개선 예정.
     //   OFFSET 페이징은 페이지가 깊어질수록 앞의 행을 읽고 버려 선형적으로 느려진다.
+    // ⚠️ 의도적 구식 구현 — Phase 3 A-4에서 fetch join/batch fetch로 개선 예정.
+    //   주문 목록의 각 주문마다 항목을 별도로 조회하면 N+1이 발생한다.
     fun getMyOrderHistory(query: OrderHistoryQuery): OrderHistoryResult {
         val page = orderRepository.findAllByCustomerIdOrderByIdDesc(
             query.customerId,
             PageRequest.of(query.page, query.size),
         )
+        val historyItems = page.content.map { order ->
+            OrderHistoryItem(order, orderItemRepository.findAllByOrderId(order.id!!))
+        }
         return OrderHistoryResult(
-            orders = page.content,
+            orders = historyItems,
             page = query.page,
             size = query.size,
             totalElements = page.totalElements,
@@ -119,6 +134,25 @@ class OrderService(
         if (order.customerId != requester.userId) {
             throw BusinessException(OrderErrorCode.ORDER_NOT_FOUND)
         }
+        return order
+    }
+
+    fun getOrderItems(orderId: Long): List<OrderItem> = orderItemRepository.findAllByOrderId(orderId)
+
+    // ACCEPTED 이전(CREATED/PAID)까지만 자유 취소 가능 — 상태머신(OrderStatus)이
+    // 이미 이 규칙을 강제하므로 여기서는 별도 시점 검증 없이 transitionTo에 위임한다.
+    // ACCEPTED 이후 취소를 시도하면 INVALID_ORDER_STATUS_TRANSITION이 그대로 올라간다.
+    @Transactional
+    fun cancelOrder(orderId: Long, requester: AuthenticatedUser): Order {
+        val order = getOrder(orderId, requester)
+        val wasPaid = order.status == OrderStatus.PAID
+
+        order.transitionTo(OrderStatus.CANCELLED)
+
+        if (wasPaid) {
+            paymentService.refund(order.id!!)
+        }
+
         return order
     }
 }

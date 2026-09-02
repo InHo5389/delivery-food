@@ -14,11 +14,13 @@ import java.time.Instant
 // shop_id는 다른 모듈(shop) 테이블을 가리키는 논리 참조다. 모듈 경계 규칙(1-8절)에 따라
 // FK를 걸지 않는다 — order와 shop이 각자 별도 DB로 분리(Phase 5)될 수 있어야 하기 때문이다.
 //
-// menuName/menuPrice, customerName/customerPhone은 주문 생성 시점의 값을 그대로 복사해둔
-// 스냅샷이다. 이후 사장님이 메뉴 가격을 바꾸거나 고객이 이름을 바꿔도 이미 생성된 주문
-// 레코드는 영향을 받지 않는다 — "주문 당시엔 8,000원이었는데 지금 보니 9,000원"이라는
-// 혼란을 막기 위한 설계다. 이 스냅샷 덕분에 order는 조회 시 auth/shop을 다시 호출할
-// 필요가 없어 팬인(fan-in) 0을 유지한다.
+// customerName/customerPhone은 주문 생성 시점의 값을 그대로 복사해둔 스냅샷이다.
+// 이후 고객이 이름을 바꿔도 이미 생성된 주문 레코드는 영향을 받지 않는다. 이 스냅샷
+// 덕분에 order는 조회 시 auth를 다시 호출할 필요가 없어 팬인(fan-in) 0을 유지한다.
+//
+// 장바구니 항목(메뉴 여러 개)은 주문 1건(Order) + 여러 항목(OrderItem)으로 모델링한다.
+// 결제(Payment)도 주문 1건 단위로 묶이므로, 취소/환불을 항목별이 아니라 주문 전체
+// 단위로 정확히 처리할 수 있다(커밋 39).
 @Entity
 @Table(name = "orders")
 class Order(
@@ -27,18 +29,6 @@ class Order(
 
     @Column(name = "shop_id", nullable = false)
     val shopId: Long,
-
-    @Column(name = "menu_id", nullable = false)
-    val menuId: Long,
-
-    @Column(name = "menu_name", nullable = false)
-    val menuName: String,
-
-    @Column(name = "menu_price", nullable = false)
-    val menuPrice: Long,
-
-    @Column(name = "quantity", nullable = false)
-    val quantity: Int,
 
     @Column(name = "customer_name", nullable = false)
     val customerName: String,
@@ -75,15 +65,9 @@ class Order(
             id: Long,
             customerId: Long,
             shopId: Long,
-            menuId: Long,
-            menuName: String,
-            menuPrice: Long,
-            quantity: Int,
             customerName: String,
             customerPhone: String,
             status: OrderStatus = OrderStatus.CREATED,
-        ): Order = Order(
-            customerId, shopId, menuId, menuName, menuPrice, quantity, customerName, customerPhone, status,
-        ).also { it.id = id }
+        ): Order = Order(customerId, shopId, customerName, customerPhone, status).also { it.id = id }
     }
 }

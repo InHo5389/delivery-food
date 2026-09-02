@@ -11,10 +11,6 @@ class OrderTest {
     private fun newOrder(): Order = Order(
         customerId = 1L,
         shopId = 1L,
-        menuId = 1L,
-        menuName = "짜장면",
-        menuPrice = 8000L,
-        quantity = 2,
         customerName = "홍길동",
         customerPhone = "01011112222",
     )
@@ -39,10 +35,6 @@ class OrderTest {
             id = 10L,
             customerId = 1L,
             shopId = 1L,
-            menuId = 1L,
-            menuName = "짜장면",
-            menuPrice = 8000L,
-            quantity = 2,
             customerName = "홍길동",
             customerPhone = "01011112222",
         )
@@ -67,14 +59,6 @@ class OrderTest {
 
         assertEquals(OrderErrorCode.INVALID_ORDER_STATUS_TRANSITION, exception.errorCode)
         assertEquals(OrderStatus.CREATED, order.status)
-    }
-
-    @Test
-    fun `메뉴명과 가격은 생성 시점 값 그대로 스냅샷된다`() {
-        val order = newOrder()
-
-        assertEquals("짜장면", order.menuName)
-        assertEquals(8000L, order.menuPrice)
     }
 
     @Test

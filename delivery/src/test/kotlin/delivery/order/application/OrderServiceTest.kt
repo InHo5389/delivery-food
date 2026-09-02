@@ -1,18 +1,22 @@
 package delivery.order.application
 
+import delivery.auth.domain.Role
 import delivery.common.exception.BusinessException
 import delivery.common.security.AuthenticatedUser
-import delivery.auth.domain.Role
 import delivery.order.application.dto.CartResult
 import delivery.order.application.dto.CreateOrderCommand
 import delivery.order.application.dto.OrderHistoryQuery
 import delivery.order.domain.Cart
+import delivery.order.domain.CartErrorCode
 import delivery.order.domain.CartItem
 import delivery.order.domain.Order
 import delivery.order.domain.OrderErrorCode
+import delivery.order.domain.OrderItem
 import delivery.order.domain.OrderStatus
 import delivery.order.domain.Payment
+import delivery.order.domain.PaymentErrorCode
 import delivery.order.domain.PaymentStatus
+import delivery.order.infrastructure.OrderItemRepository
 import delivery.order.infrastructure.OrderRepository
 import delivery.shop.application.MenuService
 import delivery.shop.application.ShopService
@@ -27,13 +31,13 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.springframework.data.domain.PageImpl
 import org.springframework.data.domain.PageRequest
-import java.math.BigDecimal
 import java.util.Optional
 import kotlin.test.assertEquals
 
 class OrderServiceTest {
 
     private val orderRepository = mockk<OrderRepository>()
+    private val orderItemRepository = mockk<OrderItemRepository>()
     private val cartService = mockk<CartService>()
     private val paymentService = mockk<PaymentService>()
     private val shopService = mockk<ShopService>()
@@ -47,7 +51,7 @@ class OrderServiceTest {
 
     @BeforeEach
     fun setUp() {
-        orderService = OrderService(orderRepository, cartService, paymentService, shopService, menuService)
+        orderService = OrderService(orderRepository, orderItemRepository, cartService, paymentService, shopService, menuService)
     }
 
     private fun openShop(minOrderAmount: Long = 0): Shop =
@@ -57,6 +61,13 @@ class OrderServiceTest {
         val cart = Cart.withId(1L, customerId, shopId)
         val item = CartItem.withId(1L, 1L, menuId, "짜장면", price, quantity)
         return CartResult(cart, listOf(item))
+    }
+
+    private fun stubOrderCreation(orderId: Long = 1L): Order {
+        val savedOrder = Order.withId(orderId, customerId, shopId, "홍길동", "01011112222")
+        every { orderRepository.save(any()) } returns savedOrder
+        every { orderItemRepository.save(any()) } answers { it.invocation.args[0] as OrderItem }
+        return savedOrder
     }
 
     @Test
@@ -70,7 +81,7 @@ class OrderServiceTest {
 
     @Test
     fun `장바구니 자체가 없으면 EMPTY_CART로 통일해서 예외가 발생한다`() {
-        every { cartService.getCart(customerId) } throws BusinessException(delivery.order.domain.CartErrorCode.CART_NOT_FOUND)
+        every { cartService.getCart(customerId) } throws BusinessException(CartErrorCode.CART_NOT_FOUND)
 
         val exception = assertThrows<BusinessException> { orderService.createOrder(command) }
 
@@ -126,15 +137,34 @@ class OrderServiceTest {
         every { cartService.getCart(customerId) } returns cartWith(quantity = 1, price = 8000L)
         every { shopService.getById(shopId) } returns openShop(minOrderAmount = 8000L)
         every { menuService.getMenuById(menuId) } returns Menu.withId(menuId, shopId, 1L, "짜장면", 8000L, 0)
-        val savedOrder = Order.withId(1L, customerId, shopId, menuId, "짜장면", 8000L, 1, "홍길동", "01011112222")
-        every { orderRepository.save(any()) } returns savedOrder
-        val approvedPayment = Payment.withId(1L, 1L, 8000L, PaymentStatus.APPROVED)
-        every { paymentService.requestPayment(any()) } returns approvedPayment
+        stubOrderCreation()
+        every { paymentService.requestPayment(any()) } returns Payment.withId(1L, 1L, 8000L, PaymentStatus.APPROVED)
         every { cartService.clear(customerId) } returns Unit
 
         val actual = orderService.createOrder(command)
 
-        assertEquals(1, actual.orders.size)
+        assertEquals(1, actual.items.size)
+    }
+
+    @Test
+    fun `장바구니 항목이 여러 개면 주문 항목도 여러 개 생성된다`() {
+        val cart = Cart.withId(1L, customerId, shopId)
+        val items = listOf(
+            CartItem.withId(1L, 1L, 1L, "짜장면", 8000L, 1),
+            CartItem.withId(2L, 1L, 2L, "짬뽕", 9000L, 1),
+        )
+        every { cartService.getCart(customerId) } returns CartResult(cart, items)
+        every { shopService.getById(shopId) } returns openShop()
+        every { menuService.getMenuById(1L) } returns Menu.withId(1L, shopId, 1L, "짜장면", 8000L, 0)
+        every { menuService.getMenuById(2L) } returns Menu.withId(2L, shopId, 1L, "짬뽕", 9000L, 1)
+        stubOrderCreation()
+        every { paymentService.requestPayment(any()) } returns Payment.withId(1L, 1L, 17000L, PaymentStatus.APPROVED)
+        every { cartService.clear(customerId) } returns Unit
+
+        val actual = orderService.createOrder(command)
+
+        assertEquals(2, actual.items.size)
+        assertEquals(17000L, actual.totalAmount)
     }
 
     @Test
@@ -142,14 +172,14 @@ class OrderServiceTest {
         every { cartService.getCart(customerId) } returns cartWith()
         every { shopService.getById(shopId) } returns openShop()
         every { menuService.getMenuById(menuId) } returns Menu.withId(menuId, shopId, 1L, "짜장면", 8000L, 0)
-        val savedOrder = Order.withId(1L, customerId, shopId, menuId, "짜장면", 8000L, 1, "홍길동", "01011112222")
-        every { orderRepository.save(any()) } returns savedOrder
+        val savedOrder = stubOrderCreation()
         every { paymentService.requestPayment(any()) } returns Payment.withId(1L, 1L, 8000L, PaymentStatus.APPROVED)
         every { cartService.clear(customerId) } returns Unit
 
         val actual = orderService.createOrder(command)
 
-        assertEquals(OrderStatus.PAID, actual.orders.first().status)
+        assertEquals(OrderStatus.PAID, actual.order.status)
+        assertEquals(savedOrder.id, actual.order.id)
         verify { cartService.clear(customerId) }
     }
 
@@ -158,19 +188,18 @@ class OrderServiceTest {
         every { cartService.getCart(customerId) } returns cartWith()
         every { shopService.getById(shopId) } returns openShop()
         every { menuService.getMenuById(menuId) } returns Menu.withId(menuId, shopId, 1L, "짜장면", 8000L, 0)
-        val savedOrder = Order.withId(1L, customerId, shopId, menuId, "짜장면", 8000L, 1, "홍길동", "01011112222")
-        every { orderRepository.save(any()) } returns savedOrder
+        stubOrderCreation()
         every { paymentService.requestPayment(any()) } returns Payment.withId(1L, 1L, 8000L, PaymentStatus.FAILED)
 
         val actual = orderService.createOrder(command)
 
-        assertEquals(OrderStatus.PAYMENT_FAILED, actual.orders.first().status)
+        assertEquals(OrderStatus.PAYMENT_FAILED, actual.order.status)
         verify(exactly = 0) { cartService.clear(any()) }
     }
 
     @Test
     fun `내 주문을 조회하면 반환된다`() {
-        val order = Order.withId(1L, customerId, shopId, menuId, "짜장면", 8000L, 1, "홍길동", "01011112222")
+        val order = Order.withId(1L, customerId, shopId, "홍길동", "01011112222")
         every { orderRepository.findById(1L) } returns Optional.of(order)
 
         val actual = orderService.getOrder(1L, AuthenticatedUser(customerId, Role.CUSTOMER))
@@ -180,7 +209,7 @@ class OrderServiceTest {
 
     @Test
     fun `다른 사람의 주문을 조회하면 예외가 발생한다`() {
-        val order = Order.withId(1L, customerId, shopId, menuId, "짜장면", 8000L, 1, "홍길동", "01011112222")
+        val order = Order.withId(1L, customerId, shopId, "홍길동", "01011112222")
         every { orderRepository.findById(1L) } returns Optional.of(order)
 
         val exception = assertThrows<BusinessException> {
@@ -203,13 +232,17 @@ class OrderServiceTest {
 
     @Test
     fun `주문 내역을 페이지 단위로 조회한다`() {
-        val order = Order.withId(1L, customerId, shopId, menuId, "짜장면", 8000L, 1, "홍길동", "01011112222")
+        val order = Order.withId(1L, customerId, shopId, "홍길동", "01011112222")
         val pageResult = PageImpl(listOf(order), PageRequest.of(0, 20), 1)
         every { orderRepository.findAllByCustomerIdOrderByIdDesc(customerId, PageRequest.of(0, 20)) } returns pageResult
+        every { orderItemRepository.findAllByOrderId(1L) } returns listOf(
+            OrderItem.withId(1L, 1L, menuId, "짜장면", 8000L, 1)
+        )
 
         val actual = orderService.getMyOrderHistory(OrderHistoryQuery(customerId, page = 0, size = 20))
 
         assertEquals(1, actual.orders.size)
+        assertEquals(1, actual.orders[0].items.size)
         assertEquals(1, actual.totalElements.toInt())
         assertEquals(1, actual.totalPages)
     }
@@ -227,13 +260,87 @@ class OrderServiceTest {
 
     @Test
     fun `두 번째 페이지를 요청하면 offset이 반영된다`() {
-        val order = Order.withId(3L, customerId, shopId, menuId, "짬뽕", 9000L, 1, "홍길동", "01011112222")
+        val order = Order.withId(3L, customerId, shopId, "홍길동", "01011112222")
         val pageResult = PageImpl(listOf(order), PageRequest.of(1, 2), 3)
         every { orderRepository.findAllByCustomerIdOrderByIdDesc(customerId, PageRequest.of(1, 2)) } returns pageResult
+        every { orderItemRepository.findAllByOrderId(3L) } returns emptyList()
 
         val actual = orderService.getMyOrderHistory(OrderHistoryQuery(customerId, page = 1, size = 2))
 
         assertEquals(1, actual.page)
         assertEquals(2, actual.totalPages)
+    }
+
+    @Test
+    fun `CREATED 상태의 주문을 취소하면 환불을 시도하지 않는다`() {
+        val order = Order.withId(1L, customerId, shopId, "홍길동", "01011112222", OrderStatus.CREATED)
+        every { orderRepository.findById(1L) } returns Optional.of(order)
+
+        val actual = orderService.cancelOrder(1L, AuthenticatedUser(customerId, Role.CUSTOMER))
+
+        assertEquals(OrderStatus.CANCELLED, actual.status)
+        verify(exactly = 0) { paymentService.refund(any()) }
+    }
+
+    @Test
+    fun `PAID 상태의 주문을 취소하면 환불을 시도한다`() {
+        val order = Order.withId(1L, customerId, shopId, "홍길동", "01011112222", OrderStatus.PAID)
+        every { orderRepository.findById(1L) } returns Optional.of(order)
+        every { paymentService.refund(1L) } returns Payment.withId(1L, 1L, 8000L, PaymentStatus.REFUNDED)
+
+        val actual = orderService.cancelOrder(1L, AuthenticatedUser(customerId, Role.CUSTOMER))
+
+        assertEquals(OrderStatus.CANCELLED, actual.status)
+        verify { paymentService.refund(1L) }
+    }
+
+    @Test
+    fun `ACCEPTED 이후 상태의 주문을 취소하려 하면 예외가 발생한다`() {
+        val order = Order.withId(1L, customerId, shopId, "홍길동", "01011112222", OrderStatus.ACCEPTED)
+        every { orderRepository.findById(1L) } returns Optional.of(order)
+
+        val exception = assertThrows<BusinessException> {
+            orderService.cancelOrder(1L, AuthenticatedUser(customerId, Role.CUSTOMER))
+        }
+
+        assertEquals(OrderErrorCode.INVALID_ORDER_STATUS_TRANSITION, exception.errorCode)
+        verify(exactly = 0) { paymentService.refund(any()) }
+    }
+
+    @Test
+    fun `이미 취소된 주문을 다시 취소하려 하면 예외가 발생한다`() {
+        val order = Order.withId(1L, customerId, shopId, "홍길동", "01011112222", OrderStatus.CANCELLED)
+        every { orderRepository.findById(1L) } returns Optional.of(order)
+
+        val exception = assertThrows<BusinessException> {
+            orderService.cancelOrder(1L, AuthenticatedUser(customerId, Role.CUSTOMER))
+        }
+
+        assertEquals(OrderErrorCode.INVALID_ORDER_STATUS_TRANSITION, exception.errorCode)
+    }
+
+    @Test
+    fun `다른 사람의 주문을 취소하려 하면 예외가 발생한다`() {
+        val order = Order.withId(1L, customerId, shopId, "홍길동", "01011112222", OrderStatus.PAID)
+        every { orderRepository.findById(1L) } returns Optional.of(order)
+
+        val exception = assertThrows<BusinessException> {
+            orderService.cancelOrder(1L, AuthenticatedUser(999L, Role.CUSTOMER))
+        }
+
+        assertEquals(OrderErrorCode.ORDER_NOT_FOUND, exception.errorCode)
+    }
+
+    @Test
+    fun `환불이 실패하면 예외가 발생한다 (실제 DB 반영은 @Transactional 롤백으로 방지됨)`() {
+        val order = Order.withId(1L, customerId, shopId, "홍길동", "01011112222", OrderStatus.PAID)
+        every { orderRepository.findById(1L) } returns Optional.of(order)
+        every { paymentService.refund(1L) } throws BusinessException(PaymentErrorCode.REFUND_FAILED)
+
+        val exception = assertThrows<BusinessException> {
+            orderService.cancelOrder(1L, AuthenticatedUser(customerId, Role.CUSTOMER))
+        }
+
+        assertEquals(PaymentErrorCode.REFUND_FAILED, exception.errorCode)
     }
 }

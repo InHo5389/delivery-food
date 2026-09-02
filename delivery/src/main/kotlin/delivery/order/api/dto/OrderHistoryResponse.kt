@@ -12,7 +12,7 @@ data class OrderHistoryResponse(
     companion object {
         fun from(result: OrderHistoryResult): OrderHistoryResponse =
             OrderHistoryResponse(
-                orders = result.orders.map(OrderResponse::from),
+                orders = result.orders.map { OrderResponse.from(it) },
                 page = result.page,
                 size = result.size,
                 totalElements = result.totalElements,

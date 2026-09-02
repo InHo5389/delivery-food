@@ -70,6 +70,16 @@ class OrderControllerIntegrationTest(
             .andExpect(status().isCreated)
     }
 
+    private fun createPaidOrder(customer: SignedUpUser, shopWithMenu: ShopWithMenu): Long {
+        addToCart(customer.token, shopWithMenu.shopId, shopWithMenu.menu)
+        val response = mockMvc.perform(
+            post("/orders").header("Authorization", "Bearer ${customer.token}")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"customerName":"홍길동","customerPhone":"01099998888"}""")
+        ).andExpect(status().isCreated).andReturn()
+        return Regex("\"orderId\":(\\d+)").find(response.response.contentAsString)!!.groupValues[1].toLong()
+    }
+
     @Test
     fun `장바구니를 담고 주문을 생성하면 201과 PAID 상태를 반환한다`() {
         val shopWithMenu = setUpOpenShopWithMenu()
@@ -81,6 +91,7 @@ class OrderControllerIntegrationTest(
             .andExpect(status().isCreated)
             .andExpect(jsonPath("$.status").value("PAID"))
             .andExpect(jsonPath("$.totalAmount").value(8000))
+            .andExpect(jsonPath("$.items[0].menuName").value("짜장면"))
     }
 
     @Test
@@ -148,7 +159,7 @@ class OrderControllerIntegrationTest(
         mockMvc.perform(get("/orders").header("Authorization", "Bearer ${customer.token}"))
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.orders.length()").value(1))
-            .andExpect(jsonPath("$.orders[0].menuName").value("짜장면"))
+            .andExpect(jsonPath("$.orders[0].items[0].menuName").value("짜장면"))
             .andExpect(jsonPath("$.totalElements").value(1))
             .andExpect(jsonPath("$.totalPages").value(1))
     }
@@ -207,12 +218,7 @@ class OrderControllerIntegrationTest(
     fun `다른 사람의 주문을 조회하면 404를 반환한다`() {
         val shopWithMenu = setUpOpenShopWithMenu()
         val customer = signup("order-customer7@test.com", Role.CUSTOMER)
-        addToCart(customer.token, shopWithMenu.shopId, shopWithMenu.menu)
-        val body = """{"customerName":"홍길동","customerPhone":"01099998888"}"""
-        val response = mockMvc.perform(post("/orders").header("Authorization", "Bearer ${customer.token}").contentType(MediaType.APPLICATION_JSON).content(body))
-            .andExpect(status().isCreated)
-            .andReturn()
-        val orderId = Regex("\"orderIds\":\\[(\\d+)").find(response.response.contentAsString)!!.groupValues[1]
+        val orderId = createPaidOrder(customer, shopWithMenu)
 
         val other = signup("order-customer8@test.com", Role.CUSTOMER)
         mockMvc.perform(get("/orders/$orderId").header("Authorization", "Bearer ${other.token}"))
@@ -224,6 +230,55 @@ class OrderControllerIntegrationTest(
         val body = """{"customerName":"홍길동","customerPhone":"01099998888"}"""
 
         mockMvc.perform(post("/orders").contentType(MediaType.APPLICATION_JSON).content(body))
+            .andExpect(status().is4xxClientError)
+    }
+
+    @Test
+    fun `PAID 상태의 주문을 취소하면 CANCELLED로 바뀐다`() {
+        val shopWithMenu = setUpOpenShopWithMenu()
+        val customer = signup("order-customer13@test.com", Role.CUSTOMER)
+        val orderId = createPaidOrder(customer, shopWithMenu)
+
+        mockMvc.perform(post("/orders/$orderId/cancel").header("Authorization", "Bearer ${customer.token}"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.status").value("CANCELLED"))
+    }
+
+    @Test
+    fun `취소된 주문을 다시 취소하면 409를 반환한다`() {
+        val shopWithMenu = setUpOpenShopWithMenu()
+        val customer = signup("order-customer14@test.com", Role.CUSTOMER)
+        val orderId = createPaidOrder(customer, shopWithMenu)
+        mockMvc.perform(post("/orders/$orderId/cancel").header("Authorization", "Bearer ${customer.token}"))
+            .andExpect(status().isOk)
+
+        mockMvc.perform(post("/orders/$orderId/cancel").header("Authorization", "Bearer ${customer.token}"))
+            .andExpect(status().isConflict)
+            .andExpect(jsonPath("$.code").value("INVALID_ORDER_STATUS_TRANSITION"))
+    }
+
+    @Test
+    fun `다른 사람의 주문을 취소하려 하면 404를 반환한다`() {
+        val shopWithMenu = setUpOpenShopWithMenu()
+        val customer = signup("order-customer15@test.com", Role.CUSTOMER)
+        val orderId = createPaidOrder(customer, shopWithMenu)
+
+        val other = signup("order-customer16@test.com", Role.CUSTOMER)
+        mockMvc.perform(post("/orders/$orderId/cancel").header("Authorization", "Bearer ${other.token}"))
+            .andExpect(status().isNotFound)
+    }
+
+    @Test
+    fun `존재하지 않는 주문을 취소하려 하면 404를 반환한다`() {
+        val customer = signup("order-customer17@test.com", Role.CUSTOMER)
+
+        mockMvc.perform(post("/orders/999999/cancel").header("Authorization", "Bearer ${customer.token}"))
+            .andExpect(status().isNotFound)
+    }
+
+    @Test
+    fun `토큰 없이 주문을 취소하면 인증 오류를 반환한다`() {
+        mockMvc.perform(post("/orders/1/cancel"))
             .andExpect(status().is4xxClientError)
     }
 }

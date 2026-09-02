@@ -42,5 +42,17 @@ class OrderController(
     fun getOrder(
         @PathVariable orderId: Long,
         @AuthenticationPrincipal requester: AuthenticatedUser,
-    ): OrderResponse = OrderResponse.from(orderService.getOrder(orderId, requester))
+    ): OrderResponse {
+        val order = orderService.getOrder(orderId, requester)
+        return OrderResponse.from(order, orderService.getOrderItems(orderId))
+    }
+
+    @PostMapping("/{orderId}/cancel")
+    fun cancelOrder(
+        @PathVariable orderId: Long,
+        @AuthenticationPrincipal requester: AuthenticatedUser,
+    ): OrderResponse {
+        val order = orderService.cancelOrder(orderId, requester)
+        return OrderResponse.from(order, orderService.getOrderItems(orderId))
+    }
 }

@@ -14,4 +14,9 @@ class MockPgClient(
         require(amount > 0) { "결제 금액은 0보다 커야 합니다." }
         return Random.nextDouble() >= failureRate
     }
+
+    fun refund(orderId: Long, amount: Long): Boolean {
+        require(amount > 0) { "환불 금액은 0보다 커야 합니다." }
+        return Random.nextDouble() >= failureRate
+    }
 }

@@ -14,4 +14,5 @@ enum class OrderErrorCode(
     MENU_SOLD_OUT(HttpStatus.CONFLICT, "품절된 메뉴가 포함되어 있습니다."),
     MENU_PRICE_CHANGED(HttpStatus.CONFLICT, "메뉴 가격이 변경되었습니다. 장바구니를 다시 확인해주세요."),
     BELOW_MIN_ORDER_AMOUNT(HttpStatus.BAD_REQUEST, "최소주문금액을 채우지 못했습니다."),
+    NOT_SHOP_OWNER(HttpStatus.FORBIDDEN, "해당 상점의 사장님만 처리할 수 있습니다."),
 }

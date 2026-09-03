@@ -1,5 +1,6 @@
 package delivery.order.application
 
+import delivery.auth.domain.Role
 import delivery.common.exception.BusinessException
 import delivery.common.security.AuthenticatedUser
 import delivery.order.application.dto.CreateOrderCommand
@@ -17,7 +18,10 @@ import delivery.order.domain.PaymentStatus
 import delivery.order.infrastructure.OrderItemRepository
 import delivery.order.infrastructure.OrderRepository
 import delivery.shop.application.MenuService
+import delivery.shop.application.OrderTicketService
 import delivery.shop.application.ShopService
+import delivery.shop.application.dto.CreateOrderTicketCommand
+import delivery.shop.application.dto.OrderTicketItemCommand
 import org.springframework.data.domain.PageRequest
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -35,6 +39,7 @@ class OrderService(
     private val paymentService: PaymentService,
     private val shopService: ShopService,
     private val menuService: MenuService,
+    private val orderTicketService: OrderTicketService,
 ) {
     @Transactional
     fun createOrder(command: CreateOrderCommand): OrderResult {
@@ -103,6 +108,18 @@ class OrderService(
 
         if (nextStatus == OrderStatus.PAID) {
             cartService.clear(command.customerId)
+            // 사장님이 접수 여부를 판단할 수 있도록 shop 모듈에 주문 티켓을 만들어둔다.
+            // shop이 order를 다시 호출하지 않도록(순환 참조 방지) 이 방향(order → shop)의
+            // 호출로만 티켓을 생성하고, 이후 수락/거절/조리 액션은 order 모듈이 주도한다.
+            orderTicketService.createTicket(
+                CreateOrderTicketCommand(
+                    orderId = order.id!!,
+                    shopId = order.shopId,
+                    customerName = order.customerName,
+                    totalAmount = cart.totalPrice,
+                    items = items.map { OrderTicketItemCommand(it.menuName, it.menuPrice, it.quantity) },
+                )
+            )
         }
 
         return OrderResult(order, items, payment)
@@ -153,6 +170,49 @@ class OrderService(
             paymentService.refund(order.id!!)
         }
 
+        return order
+    }
+
+    @Transactional
+    fun acceptOrder(orderId: Long, requester: AuthenticatedUser): Order {
+        val order = getOrderForOwner(orderId, requester)
+        order.transitionTo(OrderStatus.ACCEPTED)
+        orderTicketService.markAccepted(orderId)
+        return order
+    }
+
+    // 이미 결제된 주문을 사장님이 거절하는 것이므로 취소와 마찬가지로 환불이 필요하다.
+    @Transactional
+    fun rejectOrder(orderId: Long, requester: AuthenticatedUser): Order {
+        val order = getOrderForOwner(orderId, requester)
+        order.transitionTo(OrderStatus.REJECTED)
+        orderTicketService.markRejected(orderId)
+        paymentService.refund(orderId)
+        return order
+    }
+
+    @Transactional
+    fun startCooking(orderId: Long, requester: AuthenticatedUser): Order {
+        val order = getOrderForOwner(orderId, requester)
+        order.transitionTo(OrderStatus.COOKING)
+        orderTicketService.markCookingStarted(orderId)
+        return order
+    }
+
+    @Transactional
+    fun finishCooking(orderId: Long, requester: AuthenticatedUser): Order {
+        val order = getOrderForOwner(orderId, requester)
+        order.transitionTo(OrderStatus.COOKED)
+        orderTicketService.markCookingDone(orderId)
+        return order
+    }
+
+    private fun getOrderForOwner(orderId: Long, requester: AuthenticatedUser): Order {
+        val order = orderRepository.findById(orderId).orElseThrow { BusinessException(OrderErrorCode.ORDER_NOT_FOUND) }
+        val shop = shopService.getById(order.shopId)
+        if (requester.role != Role.OWNER || shop.ownerId != requester.userId) {
+            throw BusinessException(OrderErrorCode.NOT_SHOP_OWNER)
+        }
         return order
     }
 }

@@ -55,4 +55,40 @@ class OrderController(
         val order = orderService.cancelOrder(orderId, requester)
         return OrderResponse.from(order, orderService.getOrderItems(orderId))
     }
+
+    @PostMapping("/{orderId}/accept")
+    fun acceptOrder(
+        @PathVariable orderId: Long,
+        @AuthenticationPrincipal requester: AuthenticatedUser,
+    ): OrderResponse {
+        val order = orderService.acceptOrder(orderId, requester)
+        return OrderResponse.from(order, orderService.getOrderItems(orderId))
+    }
+
+    @PostMapping("/{orderId}/reject")
+    fun rejectOrder(
+        @PathVariable orderId: Long,
+        @AuthenticationPrincipal requester: AuthenticatedUser,
+    ): OrderResponse {
+        val order = orderService.rejectOrder(orderId, requester)
+        return OrderResponse.from(order, orderService.getOrderItems(orderId))
+    }
+
+    @PostMapping("/{orderId}/cooking-start")
+    fun startCooking(
+        @PathVariable orderId: Long,
+        @AuthenticationPrincipal requester: AuthenticatedUser,
+    ): OrderResponse {
+        val order = orderService.startCooking(orderId, requester)
+        return OrderResponse.from(order, orderService.getOrderItems(orderId))
+    }
+
+    @PostMapping("/{orderId}/cooking-done")
+    fun finishCooking(
+        @PathVariable orderId: Long,
+        @AuthenticationPrincipal requester: AuthenticatedUser,
+    ): OrderResponse {
+        val order = orderService.finishCooking(orderId, requester)
+        return OrderResponse.from(order, orderService.getOrderItems(orderId))
+    }
 }

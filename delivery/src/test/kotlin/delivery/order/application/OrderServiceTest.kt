@@ -19,8 +19,10 @@ import delivery.order.domain.PaymentStatus
 import delivery.order.infrastructure.OrderItemRepository
 import delivery.order.infrastructure.OrderRepository
 import delivery.shop.application.MenuService
+import delivery.shop.application.OrderTicketService
 import delivery.shop.application.ShopService
 import delivery.shop.domain.Menu
+import delivery.shop.domain.OrderTicket
 import delivery.shop.domain.Shop
 import delivery.shop.domain.ShopStatus
 import io.mockk.every
@@ -42,6 +44,7 @@ class OrderServiceTest {
     private val paymentService = mockk<PaymentService>()
     private val shopService = mockk<ShopService>()
     private val menuService = mockk<MenuService>()
+    private val orderTicketService = mockk<OrderTicketService>()
     private lateinit var orderService: OrderService
 
     private val customerId = 1L
@@ -51,7 +54,7 @@ class OrderServiceTest {
 
     @BeforeEach
     fun setUp() {
-        orderService = OrderService(orderRepository, orderItemRepository, cartService, paymentService, shopService, menuService)
+        orderService = OrderService(orderRepository, orderItemRepository, cartService, paymentService, shopService, menuService, orderTicketService)
     }
 
     private fun openShop(minOrderAmount: Long = 0): Shop =
@@ -140,6 +143,7 @@ class OrderServiceTest {
         stubOrderCreation()
         every { paymentService.requestPayment(any()) } returns Payment.withId(1L, 1L, 8000L, PaymentStatus.APPROVED)
         every { cartService.clear(customerId) } returns Unit
+        every { orderTicketService.createTicket(any()) } returns OrderTicket.withId(1L, 1L, shopId)
 
         val actual = orderService.createOrder(command)
 
@@ -160,6 +164,7 @@ class OrderServiceTest {
         stubOrderCreation()
         every { paymentService.requestPayment(any()) } returns Payment.withId(1L, 1L, 17000L, PaymentStatus.APPROVED)
         every { cartService.clear(customerId) } returns Unit
+        every { orderTicketService.createTicket(any()) } returns OrderTicket.withId(1L, 1L, shopId)
 
         val actual = orderService.createOrder(command)
 
@@ -175,6 +180,7 @@ class OrderServiceTest {
         val savedOrder = stubOrderCreation()
         every { paymentService.requestPayment(any()) } returns Payment.withId(1L, 1L, 8000L, PaymentStatus.APPROVED)
         every { cartService.clear(customerId) } returns Unit
+        every { orderTicketService.createTicket(any()) } returns OrderTicket.withId(1L, 1L, shopId)
 
         val actual = orderService.createOrder(command)
 
@@ -342,5 +348,110 @@ class OrderServiceTest {
         }
 
         assertEquals(PaymentErrorCode.REFUND_FAILED, exception.errorCode)
+    }
+
+    private val ownerId = 10L
+
+    @Test
+    fun `사장님이 PAID 주문을 수락하면 ACCEPTED가 되고 티켓도 반영된다`() {
+        val order = Order.withId(1L, customerId, shopId, "홍길동", "01011112222", OrderStatus.PAID)
+        every { orderRepository.findById(1L) } returns Optional.of(order)
+        every { shopService.getById(shopId) } returns Shop.withId(shopId, ownerId, "가게", "서울", "0212345678")
+        every { orderTicketService.markAccepted(1L) } returns OrderTicket.withId(1L, 1L, shopId)
+
+        val actual = orderService.acceptOrder(1L, AuthenticatedUser(ownerId, Role.OWNER))
+
+        assertEquals(OrderStatus.ACCEPTED, actual.status)
+        verify { orderTicketService.markAccepted(1L) }
+    }
+
+    @Test
+    fun `사장님이 아닌 사용자가 수락하려 하면 예외가 발생한다`() {
+        val order = Order.withId(1L, customerId, shopId, "홍길동", "01011112222", OrderStatus.PAID)
+        every { orderRepository.findById(1L) } returns Optional.of(order)
+        every { shopService.getById(shopId) } returns Shop.withId(shopId, ownerId, "가게", "서울", "0212345678")
+
+        val exception = assertThrows<BusinessException> {
+            orderService.acceptOrder(1L, AuthenticatedUser(999L, Role.OWNER))
+        }
+
+        assertEquals(OrderErrorCode.NOT_SHOP_OWNER, exception.errorCode)
+    }
+
+    @Test
+    fun `다른 상점의 사장님이 수락하려 하면 예외가 발생한다`() {
+        val order = Order.withId(1L, customerId, shopId, "홍길동", "01011112222", OrderStatus.PAID)
+        every { orderRepository.findById(1L) } returns Optional.of(order)
+        every { shopService.getById(shopId) } returns Shop.withId(shopId, ownerId, "가게", "서울", "0212345678")
+
+        val exception = assertThrows<BusinessException> {
+            orderService.acceptOrder(1L, AuthenticatedUser(ownerId, Role.CUSTOMER))
+        }
+
+        assertEquals(OrderErrorCode.NOT_SHOP_OWNER, exception.errorCode)
+    }
+
+    @Test
+    fun `CREATED 상태의 주문을 수락하려 하면 예외가 발생한다`() {
+        val order = Order.withId(1L, customerId, shopId, "홍길동", "01011112222", OrderStatus.CREATED)
+        every { orderRepository.findById(1L) } returns Optional.of(order)
+        every { shopService.getById(shopId) } returns Shop.withId(shopId, ownerId, "가게", "서울", "0212345678")
+
+        val exception = assertThrows<BusinessException> {
+            orderService.acceptOrder(1L, AuthenticatedUser(ownerId, Role.OWNER))
+        }
+
+        assertEquals(OrderErrorCode.INVALID_ORDER_STATUS_TRANSITION, exception.errorCode)
+    }
+
+    @Test
+    fun `사장님이 PAID 주문을 거절하면 REJECTED가 되고 환불된다`() {
+        val order = Order.withId(1L, customerId, shopId, "홍길동", "01011112222", OrderStatus.PAID)
+        every { orderRepository.findById(1L) } returns Optional.of(order)
+        every { shopService.getById(shopId) } returns Shop.withId(shopId, ownerId, "가게", "서울", "0212345678")
+        every { orderTicketService.markRejected(1L) } returns OrderTicket.withId(1L, 1L, shopId)
+        every { paymentService.refund(1L) } returns Payment.withId(1L, 1L, 8000L, PaymentStatus.REFUNDED)
+
+        val actual = orderService.rejectOrder(1L, AuthenticatedUser(ownerId, Role.OWNER))
+
+        assertEquals(OrderStatus.REJECTED, actual.status)
+        verify { paymentService.refund(1L) }
+    }
+
+    @Test
+    fun `사장님이 ACCEPTED 주문을 조리 시작하면 COOKING이 된다`() {
+        val order = Order.withId(1L, customerId, shopId, "홍길동", "01011112222", OrderStatus.ACCEPTED)
+        every { orderRepository.findById(1L) } returns Optional.of(order)
+        every { shopService.getById(shopId) } returns Shop.withId(shopId, ownerId, "가게", "서울", "0212345678")
+        every { orderTicketService.markCookingStarted(1L) } returns OrderTicket.withId(1L, 1L, shopId)
+
+        val actual = orderService.startCooking(1L, AuthenticatedUser(ownerId, Role.OWNER))
+
+        assertEquals(OrderStatus.COOKING, actual.status)
+    }
+
+    @Test
+    fun `ACCEPTED 이전 주문을 조리 시작하려 하면 예외가 발생한다`() {
+        val order = Order.withId(1L, customerId, shopId, "홍길동", "01011112222", OrderStatus.PAID)
+        every { orderRepository.findById(1L) } returns Optional.of(order)
+        every { shopService.getById(shopId) } returns Shop.withId(shopId, ownerId, "가게", "서울", "0212345678")
+
+        val exception = assertThrows<BusinessException> {
+            orderService.startCooking(1L, AuthenticatedUser(ownerId, Role.OWNER))
+        }
+
+        assertEquals(OrderErrorCode.INVALID_ORDER_STATUS_TRANSITION, exception.errorCode)
+    }
+
+    @Test
+    fun `사장님이 COOKING 주문을 조리 완료 처리하면 COOKED가 된다`() {
+        val order = Order.withId(1L, customerId, shopId, "홍길동", "01011112222", OrderStatus.COOKING)
+        every { orderRepository.findById(1L) } returns Optional.of(order)
+        every { shopService.getById(shopId) } returns Shop.withId(shopId, ownerId, "가게", "서울", "0212345678")
+        every { orderTicketService.markCookingDone(1L) } returns OrderTicket.withId(1L, 1L, shopId)
+
+        val actual = orderService.finishCooking(1L, AuthenticatedUser(ownerId, Role.OWNER))
+
+        assertEquals(OrderStatus.COOKED, actual.status)
     }
 }

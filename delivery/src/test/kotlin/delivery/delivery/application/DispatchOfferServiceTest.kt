@@ -2,16 +2,20 @@ package delivery.delivery.application
 
 import delivery.common.exception.BusinessException
 import delivery.delivery.application.dto.AcceptOfferCommand
+import delivery.delivery.domain.Delivery
 import delivery.delivery.domain.DeliveryErrorCode
 import delivery.delivery.domain.DispatchOffer
 import delivery.delivery.domain.DispatchOfferStatus
 import delivery.delivery.domain.Rider
 import delivery.delivery.domain.RiderStatus
 import delivery.delivery.infrastructure.DeliveryAssignmentRepository
+import delivery.delivery.infrastructure.DeliveryRepository
 import delivery.delivery.infrastructure.DispatchOfferRepository
 import delivery.delivery.infrastructure.RiderRepository
+import delivery.order.application.OrderService
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
@@ -23,11 +27,13 @@ class DispatchOfferServiceTest {
     private val dispatchOfferRepository = mockk<DispatchOfferRepository>()
     private val riderRepository = mockk<RiderRepository>()
     private val deliveryAssignmentRepository = mockk<DeliveryAssignmentRepository>()
+    private val deliveryRepository = mockk<DeliveryRepository>()
+    private val orderService = mockk<OrderService>()
     private lateinit var dispatchOfferService: DispatchOfferService
 
     @BeforeEach
     fun setUp() {
-        dispatchOfferService = DispatchOfferService(dispatchOfferRepository, riderRepository, deliveryAssignmentRepository)
+        dispatchOfferService = DispatchOfferService(dispatchOfferRepository, riderRepository, deliveryAssignmentRepository, deliveryRepository, orderService)
     }
 
     private fun rider(id: Long = 1L, accountId: Long = 100L, status: RiderStatus = RiderStatus.AVAILABLE) =
@@ -84,11 +90,14 @@ class DispatchOfferServiceTest {
         every { riderRepository.findByAccountId(100L) } returns acceptingRider
         every { deliveryAssignmentRepository.tryAssignRider(10L, 1L) } returns true
         every { dispatchOfferRepository.findAllByDeliveryId(10L) } returns listOf(offer)
+        every { deliveryRepository.findById(10L) } returns Optional.of(Delivery.withId(10L, orderId = 5L, shopId = 1L))
+        every { orderService.markRiderAssigned(5L) } returns Unit
 
         val actual = dispatchOfferService.accept(AcceptOfferCommand(1L, 100L))
 
         assertEquals(DispatchOfferStatus.ACCEPTED, actual.status)
         assertEquals(RiderStatus.BUSY, acceptingRider.status)
+        verify { orderService.markRiderAssigned(5L) }
     }
 
     @Test
@@ -99,6 +108,8 @@ class DispatchOfferServiceTest {
         every { riderRepository.findByAccountId(100L) } returns rider(id = 1L, accountId = 100L)
         every { deliveryAssignmentRepository.tryAssignRider(10L, 1L) } returns true
         every { dispatchOfferRepository.findAllByDeliveryId(10L) } returns listOf(acceptedOffer, otherOffer)
+        every { deliveryRepository.findById(10L) } returns Optional.of(Delivery.withId(10L, orderId = 5L, shopId = 1L))
+        every { orderService.markRiderAssigned(5L) } returns Unit
 
         dispatchOfferService.accept(AcceptOfferCommand(1L, 100L))
 
@@ -113,6 +124,8 @@ class DispatchOfferServiceTest {
         every { riderRepository.findByAccountId(100L) } returns rider(id = 1L, accountId = 100L)
         every { deliveryAssignmentRepository.tryAssignRider(10L, 1L) } returns true
         every { dispatchOfferRepository.findAllByDeliveryId(10L) } returns listOf(acceptedOffer, expiredOffer)
+        every { deliveryRepository.findById(10L) } returns Optional.of(Delivery.withId(10L, orderId = 5L, shopId = 1L))
+        every { orderService.markRiderAssigned(5L) } returns Unit
 
         dispatchOfferService.accept(AcceptOfferCommand(1L, 100L))
 

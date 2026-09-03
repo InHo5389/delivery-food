@@ -9,6 +9,7 @@ import delivery.delivery.infrastructure.DeliveryAssignmentRepository
 import delivery.delivery.infrastructure.DispatchOfferRepository
 import delivery.delivery.infrastructure.DispatchQueueRepository
 import delivery.delivery.infrastructure.RiderRepository
+import delivery.order.application.OrderService
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Instant
@@ -19,6 +20,7 @@ class DispatchQueueService(
     private val riderRepository: RiderRepository,
     private val deliveryAssignmentRepository: DeliveryAssignmentRepository,
     private val dispatchOfferRepository: DispatchOfferRepository,
+    private val orderService: OrderService,
 ) {
     fun getQueue(limit: Int): List<DispatchQueueItem> =
         dispatchQueueRepository.findQueue(limit).map {
@@ -49,6 +51,7 @@ class DispatchQueueService(
 
         expirePendingOffers(next.deliveryId)
         rider.goBusy()
+        orderService.markRiderAssigned(next.orderId)
 
         return DispatchQueueItem(deliveryId = next.deliveryId, orderId = next.orderId, shopId = next.shopId, estimatedPickupAt = next.estimatedPickupAt)
     }

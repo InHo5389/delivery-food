@@ -11,6 +11,9 @@ import delivery.delivery.domain.Rider
 import delivery.delivery.domain.RiderStatus
 import delivery.delivery.infrastructure.DeliveryRepository
 import delivery.delivery.infrastructure.RiderRepository
+import delivery.order.domain.Order
+import delivery.order.domain.OrderStatus
+import delivery.order.infrastructure.OrderRepository
 import delivery.support.IntegrationTestSupport
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -26,6 +29,7 @@ class DeliveryControllerIntegrationTest(
     @Autowired private val jwtProvider: JwtProvider,
     @Autowired private val deliveryRepository: DeliveryRepository,
     @Autowired private val riderRepository: RiderRepository,
+    @Autowired private val orderRepository: OrderRepository,
 ) : IntegrationTestSupport() {
 
     private data class SignedUpUser(val user: AuthenticatedUser, val token: String)
@@ -41,9 +45,19 @@ class DeliveryControllerIntegrationTest(
     private fun newRider(accountId: Long, status: RiderStatus = RiderStatus.BUSY): Rider =
         riderRepository.save(Rider(accountId, BigDecimal("37.5665000"), BigDecimal("126.9780000"), status = status))
 
-    private fun assignedDelivery(riderId: Long): Delivery {
+    // pickup/complete가 성공하면 delivery → order 동기화(markPickedUp/markDelivered)가
+    // 걸리므로, 그 대상이 될 실제 Order를 RIDER_ASSIGNED까지 진행시켜 미리 만들어둔다.
+    private fun riderAssignedOrder(): Order {
+        val order = orderRepository.save(Order(System.nanoTime(), 1L, "홍길동", "01011112222"))
+        order.transitionTo(OrderStatus.PAID)
+        order.transitionTo(OrderStatus.ACCEPTED)
+        order.transitionTo(OrderStatus.RIDER_ASSIGNED)
+        return orderRepository.save(order)
+    }
+
+    private fun assignedDelivery(riderId: Long, orderId: Long = System.nanoTime()): Delivery {
         val delivery = deliveryRepository.save(
-            Delivery(orderId = System.nanoTime(), shopId = 1L, pickupLatitude = BigDecimal("37.5665000"), pickupLongitude = BigDecimal("126.9780000"))
+            Delivery(orderId = orderId, shopId = 1L, pickupLatitude = BigDecimal("37.5665000"), pickupLongitude = BigDecimal("126.9780000"))
         )
         delivery.transitionTo(DeliveryStatus.OFFERING)
         delivery.transitionTo(DeliveryStatus.ASSIGNED)
@@ -52,21 +66,26 @@ class DeliveryControllerIntegrationTest(
     }
 
     @Test
-    fun `배정된 라이더가 픽업 처리하면 PICKED_UP으로 바뀐다`() {
+    fun `배정된 라이더가 픽업 처리하면 PICKED_UP으로 바뀌고 order에도 동기화된다`() {
         val rider = signup("delivery-rider1@test.com", Role.RIDER)
         val riderProfile = newRider(rider.user.userId)
-        val delivery = assignedDelivery(riderProfile.id!!)
+        val order = riderAssignedOrder()
+        val delivery = assignedDelivery(riderProfile.id!!, order.id!!)
 
         mockMvc.perform(post("/deliveries/${delivery.id}/pickup").header("Authorization", "Bearer ${rider.token}"))
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.status").value("PICKED_UP"))
+
+        val persistedOrder = orderRepository.findById(order.id!!).orElseThrow()
+        kotlin.test.assertEquals(OrderStatus.PICKED_UP, persistedOrder.status)
     }
 
     @Test
-    fun `픽업 후 완료 처리하면 DELIVERED로 바뀌고 라이더는 다시 배차를 받을 수 있다`() {
+    fun `픽업 후 완료 처리하면 DELIVERED로 바뀌고 라이더는 다시 배차를 받을 수 있으며 order도 DELIVERED로 동기화된다`() {
         val rider = signup("delivery-rider2@test.com", Role.RIDER)
         val riderProfile = newRider(rider.user.userId)
-        val delivery = assignedDelivery(riderProfile.id!!)
+        val order = riderAssignedOrder()
+        val delivery = assignedDelivery(riderProfile.id!!, order.id!!)
         mockMvc.perform(post("/deliveries/${delivery.id}/pickup").header("Authorization", "Bearer ${rider.token}"))
             .andExpect(status().isOk)
 
@@ -76,6 +95,8 @@ class DeliveryControllerIntegrationTest(
 
         val persistedRider = riderRepository.findByAccountId(rider.user.userId)!!
         kotlin.test.assertEquals(RiderStatus.AVAILABLE, persistedRider.status)
+        val persistedOrder = orderRepository.findById(order.id!!).orElseThrow()
+        kotlin.test.assertEquals(OrderStatus.DELIVERED, persistedOrder.status)
     }
 
     @Test

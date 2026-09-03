@@ -11,6 +11,7 @@ import delivery.delivery.infrastructure.DispatchOfferRepository
 import delivery.delivery.infrastructure.DispatchQueueRepository
 import delivery.delivery.infrastructure.DispatchQueueRow
 import delivery.delivery.infrastructure.RiderRepository
+import delivery.order.application.OrderService
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -26,11 +27,12 @@ class DispatchQueueServiceTest {
     private val riderRepository = mockk<RiderRepository>()
     private val deliveryAssignmentRepository = mockk<DeliveryAssignmentRepository>()
     private val dispatchOfferRepository = mockk<DispatchOfferRepository>()
+    private val orderService = mockk<OrderService>()
     private lateinit var dispatchQueueService: DispatchQueueService
 
     @BeforeEach
     fun setUp() {
-        dispatchQueueService = DispatchQueueService(dispatchQueueRepository, riderRepository, deliveryAssignmentRepository, dispatchOfferRepository)
+        dispatchQueueService = DispatchQueueService(dispatchQueueRepository, riderRepository, deliveryAssignmentRepository, dispatchOfferRepository, orderService)
     }
 
     private fun availableRider(id: Long = 1L, accountId: Long = 100L) = Rider.withId(id, accountId, status = RiderStatus.AVAILABLE)
@@ -111,11 +113,13 @@ class DispatchQueueServiceTest {
         every { dispatchQueueRepository.claimNext() } returns DispatchQueueRow(deliveryId = 10L, orderId = 1L, shopId = 2L, estimatedPickupAt = null)
         every { deliveryAssignmentRepository.tryAssignRider(10L, 1L) } returns true
         every { dispatchOfferRepository.findAllByDeliveryId(10L) } returns emptyList()
+        every { orderService.markRiderAssigned(1L) } returns Unit
 
         val actual = dispatchQueueService.claim(100L)
 
         assertEquals(10L, actual.deliveryId)
         assertEquals(RiderStatus.BUSY, rider.status)
+        verify { orderService.markRiderAssigned(1L) }
     }
 
     @Test
@@ -125,6 +129,7 @@ class DispatchQueueServiceTest {
         every { deliveryAssignmentRepository.tryAssignRider(10L, 1L) } returns true
         val pendingOffer = DispatchOffer.withId(5L, deliveryId = 10L, riderId = 2L)
         every { dispatchOfferRepository.findAllByDeliveryId(10L) } returns listOf(pendingOffer)
+        every { orderService.markRiderAssigned(1L) } returns Unit
 
         dispatchQueueService.claim(100L)
 

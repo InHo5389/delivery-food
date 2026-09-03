@@ -50,6 +50,10 @@ class SecurityConfig {
                 authorize("/cart/**", hasRole("CUSTOMER"))
                 authorize(HttpMethod.POST, "/orders", hasRole("CUSTOMER"))
                 authorize(HttpMethod.GET, "/orders", hasRole("CUSTOMER"))
+                // "/orders/*"(고객 전용, 아래)보다 먼저 와야 한다 — Security 규칙은 선언
+                // 순서대로 첫 매치를 적용하는데, "/orders/*"가 "/orders/sales-summary"도
+                // 매칭해버리기 때문이다.
+                authorize(HttpMethod.GET, "/orders/sales-summary", hasRole("OWNER"))
                 authorize(HttpMethod.GET, "/orders/*", hasRole("CUSTOMER"))
                 authorize(HttpMethod.POST, "/orders/*/cancel", hasRole("CUSTOMER"))
                 authorize(HttpMethod.POST, "/orders/*/accept", hasRole("OWNER"))

@@ -67,6 +67,31 @@ class OrderStatusTest {
     }
 
     @Test
+    fun `COOKED에서 PICKED_UP으로 전이할 수 있다 (라이더가 조리 전에 이미 배정된 경우)`() {
+        assertTrue(OrderStatus.COOKED.canTransitionTo(OrderStatus.PICKED_UP))
+    }
+
+    @Test
+    fun `ACCEPTED에서 RIDER_ASSIGNED로 전이할 수 있다 (조리 시작 전에 라이더가 먼저 배정될 수 있음)`() {
+        assertTrue(OrderStatus.ACCEPTED.canTransitionTo(OrderStatus.RIDER_ASSIGNED))
+    }
+
+    @Test
+    fun `COOKING에서 RIDER_ASSIGNED로 전이할 수 있다 (조리 중에 라이더가 배정되는 게 일반적인 흐름)`() {
+        assertTrue(OrderStatus.COOKING.canTransitionTo(OrderStatus.RIDER_ASSIGNED))
+    }
+
+    @Test
+    fun `RIDER_ASSIGNED에서 COOKING으로 전이할 수 있다 (라이더가 먼저 배정되고 조리가 이어지는 경우)`() {
+        assertTrue(OrderStatus.RIDER_ASSIGNED.canTransitionTo(OrderStatus.COOKING))
+    }
+
+    @Test
+    fun `RIDER_ASSIGNED에서 COOKED로 전이할 수 있다`() {
+        assertTrue(OrderStatus.RIDER_ASSIGNED.canTransitionTo(OrderStatus.COOKED))
+    }
+
+    @Test
     fun `RIDER_ASSIGNED에서 PICKED_UP으로 전이할 수 있다`() {
         assertTrue(OrderStatus.RIDER_ASSIGNED.canTransitionTo(OrderStatus.PICKED_UP))
     }

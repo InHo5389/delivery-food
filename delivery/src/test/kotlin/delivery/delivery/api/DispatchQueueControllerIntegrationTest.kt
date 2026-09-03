@@ -8,8 +8,13 @@ import delivery.delivery.domain.Delivery
 import delivery.delivery.domain.DeliveryStatus
 import delivery.delivery.domain.Rider
 import delivery.delivery.domain.RiderStatus
+import delivery.delivery.infrastructure.DeliveryAssignmentRepository
 import delivery.delivery.infrastructure.DeliveryRepository
+import delivery.delivery.infrastructure.DispatchQueueRepository
 import delivery.delivery.infrastructure.RiderRepository
+import delivery.order.domain.Order
+import delivery.order.domain.OrderStatus
+import delivery.order.infrastructure.OrderRepository
 import delivery.support.IntegrationTestSupport
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -27,6 +32,9 @@ class DispatchQueueControllerIntegrationTest(
     @Autowired private val jwtProvider: JwtProvider,
     @Autowired private val deliveryRepository: DeliveryRepository,
     @Autowired private val riderRepository: RiderRepository,
+    @Autowired private val orderRepository: OrderRepository,
+    @Autowired private val dispatchQueueRepository: DispatchQueueRepository,
+    @Autowired private val deliveryAssignmentRepository: DeliveryAssignmentRepository,
 ) : IntegrationTestSupport() {
 
     private data class SignedUpRider(val accountId: Long, val token: String)
@@ -40,12 +48,31 @@ class DispatchQueueControllerIntegrationTest(
         return SignedUpRider(accountId, tokenPair.accessToken)
     }
 
-    private fun offeringDelivery(): Delivery {
+    private fun offeringDelivery(orderId: Long = System.nanoTime()): Delivery {
         val delivery = deliveryRepository.save(
-            Delivery(orderId = System.nanoTime(), shopId = 1L, pickupLatitude = BigDecimal("37.5665000"), pickupLongitude = BigDecimal("126.9780000"))
+            Delivery(orderId = orderId, shopId = 1L, pickupLatitude = BigDecimal("37.5665000"), pickupLongitude = BigDecimal("126.9780000"))
         )
         delivery.transitionTo(DeliveryStatus.OFFERING)
         return deliveryRepository.save(delivery)
+    }
+
+    private fun acceptedOrder(): Order {
+        val order = orderRepository.save(Order(System.nanoTime(), 1L, "홍길동", "01011112222"))
+        order.transitionTo(OrderStatus.PAID)
+        order.transitionTo(OrderStatus.ACCEPTED)
+        return orderRepository.save(order)
+    }
+
+    // 같은 MySQL 컨테이너를 다른 통합 테스트와 공유하기 때문에, claim()이 이 테스트가
+    // 만든 배달이 아니라 다른 테스트가 남긴(가짜 orderId를 가진) OFFERING 배달을 집어갈
+    // 위험이 있다. 서비스 계층의 claim()을 거치면 order 동기화가 걸려 실패하므로,
+    // 리포지토리를 직접 써서(order 동기화 없이) 미리 큐를 비운다.
+    private fun drainQueue() {
+        val vacuumRider = riderRepository.save(Rider(System.nanoTime(), BigDecimal("37.5665000"), BigDecimal("126.9780000"), status = RiderStatus.AVAILABLE))
+        while (true) {
+            val next = dispatchQueueRepository.claimNext() ?: break
+            deliveryAssignmentRepository.tryAssignRider(next.deliveryId, vacuumRider.id!!)
+        }
     }
 
     @Test
@@ -109,14 +136,13 @@ class DispatchQueueControllerIntegrationTest(
     }
 
     @Test
-    fun `AVAILABLE 라이더가 클레임하면 큐에 있던 배달 하나를 배정받는다`() {
+    fun `AVAILABLE 라이더가 클레임하면 큐에 있던 배달 하나를 배정받고 order도 RIDER_ASSIGNED로 동기화된다`() {
+        drainQueue()
         val rider = signupRider("queue-claim-rider1@test.com")
         riderRepository.save(Rider(rider.accountId, BigDecimal("37.5665000"), BigDecimal("126.9780000"), status = RiderStatus.AVAILABLE))
-        offeringDelivery()
+        val order = acceptedOrder()
+        offeringDelivery(order.id!!)
 
-        // 이 테스트 클래스 밖에서도 같은 MySQL 컨테이너에 OFFERING 배달을 남기는 통합
-        // 테스트가 있어(공유 컨테이너), claimNext가 항상 방금 만든 delivery를 반환한다고
-        // 단정할 수 없다 — 응답으로 받은 deliveryId를 그대로 검증 대상으로 삼는다.
         val response = mockMvc.perform(post("/dispatch-queue/claim").header("Authorization", "Bearer ${rider.token}"))
             .andExpect(status().isOk)
             .andReturn()
@@ -125,6 +151,8 @@ class DispatchQueueControllerIntegrationTest(
         val persisted = deliveryRepository.findById(claimedDeliveryId).orElseThrow()
         assertEquals(DeliveryStatus.ASSIGNED, persisted.status)
         assertEquals(RiderStatus.BUSY, riderRepository.findByAccountId(rider.accountId)!!.status)
+        val persistedOrder = orderRepository.findById(order.id!!).orElseThrow()
+        assertEquals(OrderStatus.RIDER_ASSIGNED, persistedOrder.status)
     }
 
     @Test

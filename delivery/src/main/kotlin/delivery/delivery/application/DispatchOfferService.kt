@@ -6,8 +6,10 @@ import delivery.delivery.domain.DeliveryErrorCode
 import delivery.delivery.domain.DispatchOffer
 import delivery.delivery.domain.DispatchOfferStatus
 import delivery.delivery.infrastructure.DeliveryAssignmentRepository
+import delivery.delivery.infrastructure.DeliveryRepository
 import delivery.delivery.infrastructure.DispatchOfferRepository
 import delivery.delivery.infrastructure.RiderRepository
+import delivery.order.application.OrderService
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Instant
@@ -17,6 +19,8 @@ class DispatchOfferService(
     private val dispatchOfferRepository: DispatchOfferRepository,
     private val riderRepository: RiderRepository,
     private val deliveryAssignmentRepository: DeliveryAssignmentRepository,
+    private val deliveryRepository: DeliveryRepository,
+    private val orderService: OrderService,
 ) {
     @Transactional
     fun accept(command: AcceptOfferCommand): DispatchOffer {
@@ -37,6 +41,10 @@ class DispatchOfferService(
         offer.respondedAt = Instant.now()
         rejectOtherOffers(offer.deliveryId, offer.id!!)
         rider.goBusy()
+
+        val delivery = deliveryRepository.findById(offer.deliveryId)
+            .orElseThrow { BusinessException(DeliveryErrorCode.DELIVERY_NOT_FOUND) }
+        orderService.markRiderAssigned(delivery.orderId)
 
         return offer
     }

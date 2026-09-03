@@ -8,6 +8,7 @@ import delivery.delivery.domain.Delivery
 import delivery.order.application.dto.CartResult
 import delivery.order.application.dto.CreateOrderCommand
 import delivery.order.application.dto.OrderHistoryQuery
+import delivery.order.application.dto.SalesSummaryQuery
 import delivery.order.domain.Cart
 import delivery.order.domain.CartErrorCode
 import delivery.order.domain.CartItem
@@ -20,6 +21,8 @@ import delivery.order.domain.PaymentErrorCode
 import delivery.order.domain.PaymentStatus
 import delivery.order.infrastructure.OrderItemRepository
 import delivery.order.infrastructure.OrderRepository
+import delivery.order.infrastructure.SalesSummaryRepository
+import delivery.order.infrastructure.SalesSummaryRow
 import delivery.shop.application.MenuService
 import delivery.shop.application.OrderTicketService
 import delivery.shop.application.ShopService
@@ -29,12 +32,16 @@ import delivery.shop.domain.Shop
 import delivery.shop.domain.ShopStatus
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.slot
 import io.mockk.verify
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.springframework.data.domain.PageImpl
 import org.springframework.data.domain.PageRequest
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
 import java.util.Optional
 import kotlin.test.assertEquals
 
@@ -48,6 +55,7 @@ class OrderServiceTest {
     private val menuService = mockk<MenuService>()
     private val orderTicketService = mockk<OrderTicketService>()
     private val deliveryService = mockk<DeliveryService>()
+    private val salesSummaryRepository = mockk<SalesSummaryRepository>()
     private lateinit var orderService: OrderService
 
     private val customerId = 1L
@@ -57,7 +65,10 @@ class OrderServiceTest {
 
     @BeforeEach
     fun setUp() {
-        orderService = OrderService(orderRepository, orderItemRepository, cartService, paymentService, shopService, menuService, orderTicketService, deliveryService)
+        orderService = OrderService(
+            orderRepository, orderItemRepository, cartService, paymentService, shopService, menuService,
+            orderTicketService, deliveryService, salesSummaryRepository,
+        )
     }
 
     private fun openShop(minOrderAmount: Long = 0): Shop =
@@ -527,5 +538,44 @@ class OrderServiceTest {
         val actual = orderService.autoCancelStaleOrders()
 
         assertEquals(listOf(2L), actual)
+    }
+
+    @Test
+    fun `사장님이 매출을 조회하면 DELIVERED 기준 집계를 그대로 반환한다`() {
+        val date = LocalDate.of(2026, 9, 3)
+        every { shopService.getById(shopId) } returns Shop.withId(shopId, ownerId, "가게", "서울", "0212345678")
+        every { salesSummaryRepository.findSales(shopId, any(), any()) } returns SalesSummaryRow(orderCount = 3L, totalAmount = 45000L)
+
+        val actual = orderService.getSalesSummary(SalesSummaryQuery(shopId, date), AuthenticatedUser(ownerId, Role.OWNER))
+
+        assertEquals(date, actual.date)
+        assertEquals(3L, actual.orderCount)
+        assertEquals(45000L, actual.totalAmount)
+    }
+
+    @Test
+    fun `매출 조회 시 KST 하루 경계로 조회 범위를 계산한다`() {
+        val date = LocalDate.of(2026, 9, 3)
+        every { shopService.getById(shopId) } returns Shop.withId(shopId, ownerId, "가게", "서울", "0212345678")
+        val fromSlot = slot<Instant>()
+        val toSlot = slot<Instant>()
+        every { salesSummaryRepository.findSales(shopId, capture(fromSlot), capture(toSlot)) } returns SalesSummaryRow(0L, 0L)
+
+        orderService.getSalesSummary(SalesSummaryQuery(shopId, date), AuthenticatedUser(ownerId, Role.OWNER))
+
+        val zone = ZoneId.of("Asia/Seoul")
+        assertEquals(date.atStartOfDay(zone).toInstant(), fromSlot.captured)
+        assertEquals(date.plusDays(1).atStartOfDay(zone).toInstant(), toSlot.captured)
+    }
+
+    @Test
+    fun `사장님이 아니면 매출을 조회할 수 없다`() {
+        every { shopService.getById(shopId) } returns Shop.withId(shopId, ownerId, "가게", "서울", "0212345678")
+
+        val exception = assertThrows<BusinessException> {
+            orderService.getSalesSummary(SalesSummaryQuery(shopId, LocalDate.of(2026, 9, 3)), AuthenticatedUser(999L, Role.OWNER))
+        }
+
+        assertEquals(OrderErrorCode.NOT_SHOP_OWNER, exception.errorCode)
     }
 }

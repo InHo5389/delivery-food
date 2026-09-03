@@ -7,6 +7,8 @@ import delivery.order.api.dto.CreateOrderResponse
 import delivery.order.api.dto.OrderHistoryRequest
 import delivery.order.api.dto.OrderHistoryResponse
 import delivery.order.api.dto.OrderResponse
+import delivery.order.api.dto.SalesSummaryRequest
+import delivery.order.api.dto.SalesSummaryResponse
 import delivery.order.application.OrderService
 import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
@@ -93,4 +95,10 @@ class OrderController(
         val order = orderService.finishCooking(orderId, requester)
         return OrderResponse.from(order, orderService.getOrderItems(orderId))
     }
+
+    @GetMapping("/sales-summary")
+    fun getSalesSummary(
+        @Valid @ModelAttribute request: SalesSummaryRequest,
+        @AuthenticationPrincipal requester: AuthenticatedUser,
+    ): SalesSummaryResponse = SalesSummaryResponse.from(orderService.getSalesSummary(request.toQuery(), requester))
 }

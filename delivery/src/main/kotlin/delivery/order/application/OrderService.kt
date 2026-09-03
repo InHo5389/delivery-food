@@ -11,6 +11,8 @@ import delivery.order.application.dto.OrderHistoryQuery
 import delivery.order.application.dto.OrderHistoryResult
 import delivery.order.application.dto.OrderResult
 import delivery.order.application.dto.RequestPaymentCommand
+import delivery.order.application.dto.SalesSummaryQuery
+import delivery.order.application.dto.SalesSummaryResult
 import delivery.order.domain.CartErrorCode
 import delivery.order.domain.Order
 import delivery.order.domain.OrderErrorCode
@@ -19,6 +21,7 @@ import delivery.order.domain.OrderStatus
 import delivery.order.domain.PaymentStatus
 import delivery.order.infrastructure.OrderItemRepository
 import delivery.order.infrastructure.OrderRepository
+import delivery.order.infrastructure.SalesSummaryRepository
 import delivery.shop.application.MenuService
 import delivery.shop.application.OrderTicketService
 import delivery.shop.application.ShopService
@@ -30,10 +33,14 @@ import org.springframework.data.domain.PageRequest
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Instant
+import java.time.ZoneId
 import java.time.temporal.ChronoUnit
 
 // 사장님이 이 시간 안에 수락/거절하지 않으면 자동 취소 대상이 된다.
 private const val STALE_ORDER_THRESHOLD_MINUTES = 3L
+
+// 매출 집계는 "오늘" 같은 하루 단위 조회가 기본이라 한국 사용자 기준 KST로 하루 경계를 계산한다.
+private val KST = ZoneId.of("Asia/Seoul")
 
 // ★ 모듈 간 호출은 shopService/menuService를 직접 주입해서 쓴다(Facade를 두지 않음).
 //   지금은 모놀리스라 이벤트를 쓰지 않는다 — ApplicationEvent를 쓰면 "이벤트를 썼다"는
@@ -50,6 +57,7 @@ class OrderService(
     private val menuService: MenuService,
     private val orderTicketService: OrderTicketService,
     private val deliveryService: DeliveryService,
+    private val salesSummaryRepository: SalesSummaryRepository,
 ) {
     private val logger = LoggerFactory.getLogger(OrderService::class.java)
 
@@ -258,6 +266,42 @@ class OrderService(
         order.transitionTo(OrderStatus.COOKED)
         orderTicketService.markCookingDone(orderId)
         return order
+    }
+
+    // delivery 모듈이 라이더 배정/픽업/배달완료 시점마다 호출한다(delivery → order,
+    // 이 세 메서드에서만). order → delivery는 createDelivery 하나뿐이라 서로 다른 방향의
+    // 호출이 같은 두 서비스 사이를 왕복하지 않는다 — DeliveryService는 order만 호출하고
+    // (order를 다시 호출하지 않음), 이 동기화는 DeliveryFulfillmentService/DispatchOfferService/
+    // DispatchQueueService처럼 OrderService가 의존하지 않는 별도 델리버리쪽 서비스에서만 건다.
+    @Transactional
+    fun markRiderAssigned(orderId: Long) {
+        val order = orderRepository.findById(orderId).orElseThrow { BusinessException(OrderErrorCode.ORDER_NOT_FOUND) }
+        order.transitionTo(OrderStatus.RIDER_ASSIGNED)
+    }
+
+    @Transactional
+    fun markPickedUp(orderId: Long) {
+        val order = orderRepository.findById(orderId).orElseThrow { BusinessException(OrderErrorCode.ORDER_NOT_FOUND) }
+        order.transitionTo(OrderStatus.PICKED_UP)
+    }
+
+    @Transactional
+    fun markDelivered(orderId: Long) {
+        val order = orderRepository.findById(orderId).orElseThrow { BusinessException(OrderErrorCode.ORDER_NOT_FOUND) }
+        order.transitionTo(OrderStatus.DELIVERED)
+    }
+
+    // "완료된" 매출만 집계 대상으로 본다 — 배달 중이거나 아직 픽업 전인 주문은 취소될
+    // 여지가 있어 확정된 매출이 아니다. 반열림 구간([start, end))으로 KST 하루를 끊는다.
+    fun getSalesSummary(query: SalesSummaryQuery, requester: AuthenticatedUser): SalesSummaryResult {
+        val shop = shopService.getById(query.shopId)
+        if (requester.role != Role.OWNER || shop.ownerId != requester.userId) {
+            throw BusinessException(OrderErrorCode.NOT_SHOP_OWNER)
+        }
+        val start = query.date.atStartOfDay(KST).toInstant()
+        val end = query.date.plusDays(1).atStartOfDay(KST).toInstant()
+        val row = salesSummaryRepository.findSales(query.shopId, start, end)
+        return SalesSummaryResult(date = query.date, orderCount = row.orderCount, totalAmount = row.totalAmount)
     }
 
     private fun getOrderForOwner(orderId: Long, requester: AuthenticatedUser): Pair<Order, Shop> {

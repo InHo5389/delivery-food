@@ -13,6 +13,9 @@ import delivery.delivery.domain.Rider
 import delivery.delivery.infrastructure.DeliveryRepository
 import delivery.delivery.infrastructure.DispatchOfferRepository
 import delivery.delivery.infrastructure.RiderRepository
+import delivery.order.domain.Order
+import delivery.order.domain.OrderStatus
+import delivery.order.infrastructure.OrderRepository
 import delivery.support.IntegrationTestSupport
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -29,6 +32,7 @@ class DispatchOfferControllerIntegrationTest(
     @Autowired private val deliveryRepository: DeliveryRepository,
     @Autowired private val riderRepository: RiderRepository,
     @Autowired private val dispatchOfferRepository: DispatchOfferRepository,
+    @Autowired private val orderRepository: OrderRepository,
 ) : IntegrationTestSupport() {
 
     private data class SignedUpUser(val user: AuthenticatedUser, val token: String)
@@ -44,9 +48,18 @@ class DispatchOfferControllerIntegrationTest(
     private fun newRider(accountId: Long): Rider =
         riderRepository.save(Rider(accountId, BigDecimal("37.5665000"), BigDecimal("126.9780000"), status = RiderStatus.AVAILABLE))
 
-    private fun offeringDeliveryWithOffer(riderId: Long): DispatchOffer {
+    // 수락에 성공하면 delivery → order 동기화(markRiderAssigned)가 걸리므로, 대상이 될
+    // 실제 Order를 ACCEPTED까지 진행시켜 미리 만들어둔다.
+    private fun acceptedOrder(): Order {
+        val order = orderRepository.save(Order(System.nanoTime(), 1L, "홍길동", "01011112222"))
+        order.transitionTo(OrderStatus.PAID)
+        order.transitionTo(OrderStatus.ACCEPTED)
+        return orderRepository.save(order)
+    }
+
+    private fun offeringDeliveryWithOffer(riderId: Long, orderId: Long = System.nanoTime()): DispatchOffer {
         val delivery = deliveryRepository.save(
-            Delivery(orderId = System.nanoTime(), shopId = 1L, pickupLatitude = BigDecimal("37.5665000"), pickupLongitude = BigDecimal("126.9780000"))
+            Delivery(orderId = orderId, shopId = 1L, pickupLatitude = BigDecimal("37.5665000"), pickupLongitude = BigDecimal("126.9780000"))
         )
         delivery.transitionTo(DeliveryStatus.OFFERING)
         deliveryRepository.save(delivery)
@@ -54,14 +67,18 @@ class DispatchOfferControllerIntegrationTest(
     }
 
     @Test
-    fun `본인에게 온 오퍼를 수락하면 200과 ACCEPTED 상태를 반환한다`() {
+    fun `본인에게 온 오퍼를 수락하면 200과 ACCEPTED 상태를 반환하고 order도 RIDER_ASSIGNED로 동기화된다`() {
         val rider = signup("dispatch-rider1@test.com", Role.RIDER)
         val riderProfile = newRider(rider.user.userId)
-        val offer = offeringDeliveryWithOffer(riderProfile.id!!)
+        val order = acceptedOrder()
+        val offer = offeringDeliveryWithOffer(riderProfile.id!!, order.id!!)
 
         mockMvc.perform(post("/dispatch-offers/${offer.id}/accept").header("Authorization", "Bearer ${rider.token}"))
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.status").value("ACCEPTED"))
+
+        val persistedOrder = orderRepository.findById(order.id!!).orElseThrow()
+        kotlin.test.assertEquals(OrderStatus.RIDER_ASSIGNED, persistedOrder.status)
     }
 
     @Test
@@ -95,7 +112,7 @@ class DispatchOfferControllerIntegrationTest(
         val secondProfile = newRider(second.user.userId)
 
         val delivery = deliveryRepository.save(
-            Delivery(orderId = System.nanoTime(), shopId = 1L, pickupLatitude = BigDecimal("37.5665000"), pickupLongitude = BigDecimal("126.9780000"))
+            Delivery(orderId = acceptedOrder().id!!, shopId = 1L, pickupLatitude = BigDecimal("37.5665000"), pickupLongitude = BigDecimal("126.9780000"))
         )
         delivery.transitionTo(DeliveryStatus.OFFERING)
         deliveryRepository.save(delivery)

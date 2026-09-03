@@ -9,6 +9,9 @@ import delivery.delivery.infrastructure.DeliveryAssignmentRepository
 import delivery.delivery.infrastructure.DeliveryRepository
 import delivery.delivery.infrastructure.DispatchQueueRepository
 import delivery.delivery.infrastructure.RiderRepository
+import delivery.order.domain.Order
+import delivery.order.domain.OrderStatus
+import delivery.order.infrastructure.OrderRepository
 import delivery.support.IntegrationTestSupport
 import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
@@ -30,7 +33,15 @@ class DispatchQueueConcurrencyIntegrationTest(
     @Autowired private val deliveryRepository: DeliveryRepository,
     @Autowired private val deliveryAssignmentRepository: DeliveryAssignmentRepository,
     @Autowired private val riderRepository: RiderRepository,
+    @Autowired private val orderRepository: OrderRepository,
 ) : IntegrationTestSupport() {
+
+    private fun acceptedOrder(): Order {
+        val order = orderRepository.save(Order(System.nanoTime(), 1L, "홍길동", "01011112222"))
+        order.transitionTo(OrderStatus.PAID)
+        order.transitionTo(OrderStatus.ACCEPTED)
+        return orderRepository.save(order)
+    }
 
     // 같은 MySQL 컨테이너를 다른 통합 테스트들과 공유하기 때문에, 그 테스트들이 남겨둔
     // OFFERING 배달이 남아 있으면 "큐에 1건뿐"이라는 이 테스트의 전제가 깨진다.
@@ -50,7 +61,7 @@ class DispatchQueueConcurrencyIntegrationTest(
         drainQueue()
         val concurrency = 20
         val delivery = deliveryRepository.save(
-            Delivery(orderId = System.nanoTime(), shopId = 1L, pickupLatitude = BigDecimal("37.5665000"), pickupLongitude = BigDecimal("126.9780000"))
+            Delivery(orderId = acceptedOrder().id!!, shopId = 1L, pickupLatitude = BigDecimal("37.5665000"), pickupLongitude = BigDecimal("126.9780000"))
         )
         delivery.transitionTo(DeliveryStatus.OFFERING)
         deliveryRepository.save(delivery)

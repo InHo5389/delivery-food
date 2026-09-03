@@ -55,6 +55,8 @@ class SecurityConfig {
                 authorize(HttpMethod.POST, "/dispatch-offers/*/accept", hasRole("RIDER"))
                 authorize(HttpMethod.GET, "/dispatch-queue", hasRole("RIDER"))
                 authorize(HttpMethod.POST, "/dispatch-queue/claim", hasRole("RIDER"))
+                authorize(HttpMethod.POST, "/deliveries/*/pickup", hasRole("RIDER"))
+                authorize(HttpMethod.POST, "/deliveries/*/complete", hasRole("RIDER"))
                 authorize(anyRequest, authenticated)
             }
             httpBasic { disable() }

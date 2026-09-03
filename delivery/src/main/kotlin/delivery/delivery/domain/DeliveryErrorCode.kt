@@ -15,4 +15,5 @@ enum class DeliveryErrorCode(
     RIDER_NOT_FOUND(HttpStatus.NOT_FOUND, "라이더 정보를 찾을 수 없습니다."),
     RIDER_NOT_AVAILABLE(HttpStatus.CONFLICT, "지금은 새 배차를 받을 수 없는 상태입니다."),
     DISPATCH_QUEUE_EMPTY(HttpStatus.NOT_FOUND, "배차 대기 중인 배달이 없습니다."),
+    NOT_YOUR_DELIVERY(HttpStatus.FORBIDDEN, "본인에게 배정된 배달이 아닙니다."),
 }

@@ -1,6 +1,7 @@
 package delivery.delivery.application
 
 import delivery.common.exception.BusinessException
+import delivery.delivery.application.dto.CreateDeliveryCommand
 import delivery.delivery.domain.Delivery
 import delivery.delivery.domain.DeliveryErrorCode
 import delivery.delivery.domain.DeliveryStatus
@@ -13,8 +14,10 @@ import io.mockk.mockk
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
+import java.math.BigDecimal
 import java.util.Optional
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class DeliveryServiceTest {
 
@@ -34,6 +37,23 @@ class DeliveryServiceTest {
         Delivery.withId(10L, orderId = 1L, shopId = 1L, status = DeliveryStatus.PICKED_UP).apply { this.riderId = riderId }
 
     private fun rider(id: Long = 1L, accountId: Long = 100L, status: RiderStatus = RiderStatus.BUSY) = Rider.withId(id, accountId, status = status)
+
+    @Test
+    fun `배달을 생성하면 PENDING 상태로 저장된다`() {
+        val command = CreateDeliveryCommand(
+            orderId = 1L, shopId = 1L,
+            pickupLatitude = BigDecimal("37.5665000"), pickupLongitude = BigDecimal("126.9780000"),
+            estimatedCookingMinutes = 15,
+        )
+        every { deliveryRepository.save(any()) } answers { it.invocation.args[0] as Delivery }
+
+        val actual = deliveryService.createDelivery(command)
+
+        assertEquals(DeliveryStatus.PENDING, actual.status)
+        assertEquals(1L, actual.orderId)
+        assertEquals(1L, actual.shopId)
+        assertTrue(actual.estimatedPickupAt != null && actual.estimatedPickupAt!!.isAfter(java.time.Instant.now()))
+    }
 
     @Test
     fun `존재하지 않는 배달을 픽업 처리하면 예외가 발생한다`() {

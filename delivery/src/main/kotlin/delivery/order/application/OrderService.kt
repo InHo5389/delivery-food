@@ -3,6 +3,8 @@ package delivery.order.application
 import delivery.auth.domain.Role
 import delivery.common.exception.BusinessException
 import delivery.common.security.AuthenticatedUser
+import delivery.delivery.application.DeliveryService
+import delivery.delivery.application.dto.CreateDeliveryCommand
 import delivery.order.application.dto.CreateOrderCommand
 import delivery.order.application.dto.OrderHistoryItem
 import delivery.order.application.dto.OrderHistoryQuery
@@ -22,6 +24,7 @@ import delivery.shop.application.OrderTicketService
 import delivery.shop.application.ShopService
 import delivery.shop.application.dto.CreateOrderTicketCommand
 import delivery.shop.application.dto.OrderTicketItemCommand
+import delivery.shop.domain.Shop
 import org.springframework.data.domain.PageRequest
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -40,6 +43,7 @@ class OrderService(
     private val shopService: ShopService,
     private val menuService: MenuService,
     private val orderTicketService: OrderTicketService,
+    private val deliveryService: DeliveryService,
 ) {
     @Transactional
     fun createOrder(command: CreateOrderCommand): OrderResult {
@@ -173,18 +177,31 @@ class OrderService(
         return order
     }
 
+    // 배차는 조리 완료(COOKED)가 아니라 접수(ACCEPTED) 시점에 시작한다 — 조리 시간에
+    // 맞춰 라이더가 도착하도록 역산하는 것이 목표다. COOKED 시점에 시작하면 라이더가
+    // 도착할 때까지 음식이 식고, PAID 시점에 시작하면 사장님이 아직 거절할 수 있는데도
+    // 미리 라이더를 부르게 된다.
     @Transactional
-    fun acceptOrder(orderId: Long, requester: AuthenticatedUser): Order {
-        val order = getOrderForOwner(orderId, requester)
+    fun acceptOrder(orderId: Long, requester: AuthenticatedUser, estimatedCookingMinutes: Int): Order {
+        val (order, shop) = getOrderForOwner(orderId, requester)
         order.transitionTo(OrderStatus.ACCEPTED)
         orderTicketService.markAccepted(orderId)
+        deliveryService.createDelivery(
+            CreateDeliveryCommand(
+                orderId = order.id!!,
+                shopId = shop.id!!,
+                pickupLatitude = shop.latitude,
+                pickupLongitude = shop.longitude,
+                estimatedCookingMinutes = estimatedCookingMinutes,
+            )
+        )
         return order
     }
 
     // 이미 결제된 주문을 사장님이 거절하는 것이므로 취소와 마찬가지로 환불이 필요하다.
     @Transactional
     fun rejectOrder(orderId: Long, requester: AuthenticatedUser): Order {
-        val order = getOrderForOwner(orderId, requester)
+        val (order, _) = getOrderForOwner(orderId, requester)
         order.transitionTo(OrderStatus.REJECTED)
         orderTicketService.markRejected(orderId)
         paymentService.refund(orderId)
@@ -193,7 +210,7 @@ class OrderService(
 
     @Transactional
     fun startCooking(orderId: Long, requester: AuthenticatedUser): Order {
-        val order = getOrderForOwner(orderId, requester)
+        val (order, _) = getOrderForOwner(orderId, requester)
         order.transitionTo(OrderStatus.COOKING)
         orderTicketService.markCookingStarted(orderId)
         return order
@@ -201,18 +218,18 @@ class OrderService(
 
     @Transactional
     fun finishCooking(orderId: Long, requester: AuthenticatedUser): Order {
-        val order = getOrderForOwner(orderId, requester)
+        val (order, _) = getOrderForOwner(orderId, requester)
         order.transitionTo(OrderStatus.COOKED)
         orderTicketService.markCookingDone(orderId)
         return order
     }
 
-    private fun getOrderForOwner(orderId: Long, requester: AuthenticatedUser): Order {
+    private fun getOrderForOwner(orderId: Long, requester: AuthenticatedUser): Pair<Order, Shop> {
         val order = orderRepository.findById(orderId).orElseThrow { BusinessException(OrderErrorCode.ORDER_NOT_FOUND) }
         val shop = shopService.getById(order.shopId)
         if (requester.role != Role.OWNER || shop.ownerId != requester.userId) {
             throw BusinessException(OrderErrorCode.NOT_SHOP_OWNER)
         }
-        return order
+        return order to shop
     }
 }

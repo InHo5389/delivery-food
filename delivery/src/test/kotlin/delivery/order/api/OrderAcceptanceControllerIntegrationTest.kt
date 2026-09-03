@@ -5,6 +5,8 @@ import delivery.auth.application.dto.SignupCommand
 import delivery.auth.domain.Role
 import delivery.auth.infrastructure.JwtProvider
 import delivery.common.security.AuthenticatedUser
+import delivery.delivery.domain.DeliveryStatus
+import delivery.delivery.infrastructure.DeliveryRepository
 import delivery.shop.application.MenuService
 import delivery.shop.application.ShopService
 import delivery.shop.application.dto.CreateMenuCommand
@@ -16,11 +18,14 @@ import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.http.MediaType
 import org.springframework.test.web.servlet.MockMvc
+import org.springframework.test.web.servlet.ResultActions
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import java.math.BigDecimal
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class OrderAcceptanceControllerIntegrationTest(
     @Autowired private val mockMvc: MockMvc,
@@ -28,6 +33,7 @@ class OrderAcceptanceControllerIntegrationTest(
     @Autowired private val jwtProvider: JwtProvider,
     @Autowired private val shopService: ShopService,
     @Autowired private val menuService: MenuService,
+    @Autowired private val deliveryRepository: DeliveryRepository,
 ) : IntegrationTestSupport() {
 
     private data class SignedUpUser(val user: AuthenticatedUser, val token: String)
@@ -73,14 +79,89 @@ class OrderAcceptanceControllerIntegrationTest(
         return Regex("\"orderId\":(\\d+)").find(response.response.contentAsString)!!.groupValues[1].toLong()
     }
 
+    private fun acceptOrder(orderId: Long, token: String, estimatedCookingMinutes: Int = 15): ResultActions =
+        mockMvc.perform(
+            post("/orders/$orderId/accept").header("Authorization", "Bearer $token")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"estimatedCookingMinutes":$estimatedCookingMinutes}""")
+        )
+
     @Test
     fun `사장님이 PAID 주문을 수락하면 ACCEPTED가 된다`() {
         val shopWithMenu = setUpOpenShopWithMenu()
         val orderId = createPaidOrder(shopWithMenu)
 
-        mockMvc.perform(post("/orders/$orderId/accept").header("Authorization", "Bearer ${shopWithMenu.owner.token}"))
+        acceptOrder(orderId, shopWithMenu.owner.token)
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.status").value("ACCEPTED"))
+    }
+
+    @Test
+    fun `조리 예상 시간이 없으면 400을 반환한다`() {
+        val shopWithMenu = setUpOpenShopWithMenu()
+        val orderId = createPaidOrder(shopWithMenu)
+
+        mockMvc.perform(
+            post("/orders/$orderId/accept").header("Authorization", "Bearer ${shopWithMenu.owner.token}")
+                .contentType(MediaType.APPLICATION_JSON).content("{}")
+        ).andExpect(status().isBadRequest)
+    }
+
+    @Test
+    fun `조리 예상 시간이 0이면 400을 반환한다`() {
+        val shopWithMenu = setUpOpenShopWithMenu()
+        val orderId = createPaidOrder(shopWithMenu)
+
+        acceptOrder(orderId, shopWithMenu.owner.token, estimatedCookingMinutes = 0)
+            .andExpect(status().isBadRequest)
+    }
+
+    @Test
+    fun `조리 예상 시간이 120을 초과하면 400을 반환한다`() {
+        val shopWithMenu = setUpOpenShopWithMenu()
+        val orderId = createPaidOrder(shopWithMenu)
+
+        acceptOrder(orderId, shopWithMenu.owner.token, estimatedCookingMinutes = 121)
+            .andExpect(status().isBadRequest)
+    }
+
+    @Test
+    fun `조리 예상 시간이 정확히 120이면 허용된다`() {
+        val shopWithMenu = setUpOpenShopWithMenu()
+        val orderId = createPaidOrder(shopWithMenu)
+
+        acceptOrder(orderId, shopWithMenu.owner.token, estimatedCookingMinutes = 120)
+            .andExpect(status().isOk)
+    }
+
+    @Test
+    fun `주문을 수락하면 배차 요청(배달 PENDING)이 함께 생성되고 예상 픽업 시각이 계산된다`() {
+        val shopWithMenu = setUpOpenShopWithMenu()
+        val orderId = createPaidOrder(shopWithMenu)
+        val before = java.time.Instant.now()
+
+        acceptOrder(orderId, shopWithMenu.owner.token, estimatedCookingMinutes = 15)
+            .andExpect(status().isOk)
+
+        val deliveries = deliveryRepository.findAllByStatus(DeliveryStatus.PENDING)
+        val created = deliveries.firstOrNull { it.orderId == orderId }
+        assertTrue(created != null, "수락된 주문에 대한 배달 레코드가 생성되어야 한다")
+        assertEquals(shopWithMenu.shopId, created!!.shopId)
+        assertTrue(created.estimatedPickupAt != null)
+        assertTrue(created.estimatedPickupAt!!.isAfter(before.plusSeconds(14 * 60)))
+        assertTrue(created.estimatedPickupAt!!.isBefore(before.plusSeconds(16 * 60)))
+    }
+
+    @Test
+    fun `거절하면 배차 요청이 생성되지 않는다`() {
+        val shopWithMenu = setUpOpenShopWithMenu()
+        val orderId = createPaidOrder(shopWithMenu)
+
+        mockMvc.perform(post("/orders/$orderId/reject").header("Authorization", "Bearer ${shopWithMenu.owner.token}"))
+            .andExpect(status().isOk)
+
+        val deliveries = deliveryRepository.findAllByStatus(DeliveryStatus.PENDING)
+        assertTrue(deliveries.none { it.orderId == orderId })
     }
 
     @Test
@@ -89,7 +170,7 @@ class OrderAcceptanceControllerIntegrationTest(
         val orderId = createPaidOrder(shopWithMenu)
         val stranger = signup("accept-stranger1@test.com", Role.OWNER)
 
-        mockMvc.perform(post("/orders/$orderId/accept").header("Authorization", "Bearer ${stranger.token}"))
+        acceptOrder(orderId, stranger.token)
             .andExpect(status().isForbidden)
             .andExpect(jsonPath("$.code").value("NOT_SHOP_OWNER"))
     }
@@ -100,7 +181,7 @@ class OrderAcceptanceControllerIntegrationTest(
         val orderId = createPaidOrder(shopWithMenu)
         val customer = signup("accept-customer-role@test.com", Role.CUSTOMER)
 
-        mockMvc.perform(post("/orders/$orderId/accept").header("Authorization", "Bearer ${customer.token}"))
+        acceptOrder(orderId, customer.token)
             .andExpect(status().isForbidden)
     }
 
@@ -108,10 +189,10 @@ class OrderAcceptanceControllerIntegrationTest(
     fun `이미 수락된 주문을 다시 수락하려 하면 409를 반환한다`() {
         val shopWithMenu = setUpOpenShopWithMenu()
         val orderId = createPaidOrder(shopWithMenu)
-        mockMvc.perform(post("/orders/$orderId/accept").header("Authorization", "Bearer ${shopWithMenu.owner.token}"))
+        acceptOrder(orderId, shopWithMenu.owner.token)
             .andExpect(status().isOk)
 
-        mockMvc.perform(post("/orders/$orderId/accept").header("Authorization", "Bearer ${shopWithMenu.owner.token}"))
+        acceptOrder(orderId, shopWithMenu.owner.token)
             .andExpect(status().isConflict)
             .andExpect(jsonPath("$.code").value("INVALID_ORDER_STATUS_TRANSITION"))
     }
@@ -130,7 +211,7 @@ class OrderAcceptanceControllerIntegrationTest(
     fun `수락 후 조리 시작과 조리 완료를 순서대로 호출하면 상태가 바뀐다`() {
         val shopWithMenu = setUpOpenShopWithMenu()
         val orderId = createPaidOrder(shopWithMenu)
-        mockMvc.perform(post("/orders/$orderId/accept").header("Authorization", "Bearer ${shopWithMenu.owner.token}"))
+        acceptOrder(orderId, shopWithMenu.owner.token)
             .andExpect(status().isOk)
 
         mockMvc.perform(post("/orders/$orderId/cooking-start").header("Authorization", "Bearer ${shopWithMenu.owner.token}"))
@@ -168,7 +249,7 @@ class OrderAcceptanceControllerIntegrationTest(
     fun `주문을 수락하면 티켓 상태도 함께 ACCEPTED로 바뀐다`() {
         val shopWithMenu = setUpOpenShopWithMenu()
         val orderId = createPaidOrder(shopWithMenu)
-        mockMvc.perform(post("/orders/$orderId/accept").header("Authorization", "Bearer ${shopWithMenu.owner.token}"))
+        acceptOrder(orderId, shopWithMenu.owner.token)
             .andExpect(status().isOk)
 
         mockMvc.perform(get("/order-tickets?shopId=${shopWithMenu.shopId}").header("Authorization", "Bearer ${shopWithMenu.owner.token}"))

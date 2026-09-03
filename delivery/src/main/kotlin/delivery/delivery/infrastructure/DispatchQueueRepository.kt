@@ -2,6 +2,7 @@ package delivery.delivery.infrastructure
 
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Repository
+import java.sql.Timestamp
 
 @Repository
 class DispatchQueueRepository(
@@ -12,7 +13,7 @@ class DispatchQueueRepository(
     fun findQueue(limit: Int): List<DispatchQueueRow> =
         jdbcTemplate.query(
             """
-            SELECT id, order_id, shop_id
+            SELECT id, order_id, shop_id, estimated_pickup_at
             FROM delivery
             WHERE status = 'OFFERING'
             ORDER BY created_at ASC
@@ -23,6 +24,7 @@ class DispatchQueueRepository(
                     deliveryId = rs.getLong("id"),
                     orderId = rs.getLong("order_id"),
                     shopId = rs.getLong("shop_id"),
+                    estimatedPickupAt = rs.getTimestamp("estimated_pickup_at")?.let(Timestamp::toInstant),
                 )
             },
             limit,
@@ -37,7 +39,7 @@ class DispatchQueueRepository(
     fun claimNext(): DispatchQueueRow? =
         jdbcTemplate.query(
             """
-            SELECT id, order_id, shop_id
+            SELECT id, order_id, shop_id, estimated_pickup_at
             FROM delivery
             WHERE status = 'OFFERING'
             ORDER BY created_at ASC
@@ -49,6 +51,7 @@ class DispatchQueueRepository(
                     deliveryId = rs.getLong("id"),
                     orderId = rs.getLong("order_id"),
                     shopId = rs.getLong("shop_id"),
+                    estimatedPickupAt = rs.getTimestamp("estimated_pickup_at")?.let(Timestamp::toInstant),
                 )
             },
         ).firstOrNull()

@@ -6,10 +6,11 @@ data class DispatchQueueItemResponse(
     val deliveryId: Long,
     val orderId: Long,
     val shopId: Long,
+    val estimatedPickupAt: String?,
 ) {
     companion object {
         fun from(item: DispatchQueueItem): DispatchQueueItemResponse =
-            DispatchQueueItemResponse(item.deliveryId, item.orderId, item.shopId)
+            DispatchQueueItemResponse(item.deliveryId, item.orderId, item.shopId, item.estimatedPickupAt?.toString())
     }
 }
 

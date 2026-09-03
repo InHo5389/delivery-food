@@ -46,7 +46,7 @@ class DispatchQueueServiceTest {
 
     @Test
     fun `조회 결과를 그대로 큐 항목으로 변환한다`() {
-        every { dispatchQueueRepository.findQueue(20) } returns listOf(DispatchQueueRow(deliveryId = 1L, orderId = 10L, shopId = 100L))
+        every { dispatchQueueRepository.findQueue(20) } returns listOf(DispatchQueueRow(deliveryId = 1L, orderId = 10L, shopId = 100L, estimatedPickupAt = null))
 
         val actual = dispatchQueueService.getQueue(20)
 
@@ -96,7 +96,7 @@ class DispatchQueueServiceTest {
     @Test
     fun `배정에 실패하면(방어적 CAS) 예외가 발생한다`() {
         every { riderRepository.findByAccountId(100L) } returns availableRider()
-        every { dispatchQueueRepository.claimNext() } returns DispatchQueueRow(deliveryId = 10L, orderId = 1L, shopId = 1L)
+        every { dispatchQueueRepository.claimNext() } returns DispatchQueueRow(deliveryId = 10L, orderId = 1L, shopId = 1L, estimatedPickupAt = null)
         every { deliveryAssignmentRepository.tryAssignRider(10L, 1L) } returns false
 
         val exception = assertThrows<BusinessException> { dispatchQueueService.claim(100L) }
@@ -108,7 +108,7 @@ class DispatchQueueServiceTest {
     fun `정상적으로 클레임하면 배달을 배정받고 라이더는 BUSY가 된다`() {
         val rider = availableRider()
         every { riderRepository.findByAccountId(100L) } returns rider
-        every { dispatchQueueRepository.claimNext() } returns DispatchQueueRow(deliveryId = 10L, orderId = 1L, shopId = 2L)
+        every { dispatchQueueRepository.claimNext() } returns DispatchQueueRow(deliveryId = 10L, orderId = 1L, shopId = 2L, estimatedPickupAt = null)
         every { deliveryAssignmentRepository.tryAssignRider(10L, 1L) } returns true
         every { dispatchOfferRepository.findAllByDeliveryId(10L) } returns emptyList()
 
@@ -121,7 +121,7 @@ class DispatchQueueServiceTest {
     @Test
     fun `클레임되면 같은 배달의 대기 중인 오퍼는 EXPIRED로 정리된다`() {
         every { riderRepository.findByAccountId(100L) } returns availableRider()
-        every { dispatchQueueRepository.claimNext() } returns DispatchQueueRow(deliveryId = 10L, orderId = 1L, shopId = 2L)
+        every { dispatchQueueRepository.claimNext() } returns DispatchQueueRow(deliveryId = 10L, orderId = 1L, shopId = 2L, estimatedPickupAt = null)
         every { deliveryAssignmentRepository.tryAssignRider(10L, 1L) } returns true
         val pendingOffer = DispatchOffer.withId(5L, deliveryId = 10L, riderId = 2L)
         every { dispatchOfferRepository.findAllByDeliveryId(10L) } returns listOf(pendingOffer)

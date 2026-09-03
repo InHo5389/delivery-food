@@ -1,6 +1,7 @@
 package delivery.order.api
 
 import delivery.common.security.AuthenticatedUser
+import delivery.order.api.dto.AcceptOrderRequest
 import delivery.order.api.dto.CreateOrderRequest
 import delivery.order.api.dto.CreateOrderResponse
 import delivery.order.api.dto.OrderHistoryRequest
@@ -59,9 +60,10 @@ class OrderController(
     @PostMapping("/{orderId}/accept")
     fun acceptOrder(
         @PathVariable orderId: Long,
+        @Valid @RequestBody request: AcceptOrderRequest,
         @AuthenticationPrincipal requester: AuthenticatedUser,
     ): OrderResponse {
-        val order = orderService.acceptOrder(orderId, requester)
+        val order = orderService.acceptOrder(orderId, requester, request.estimatedCookingMinutes)
         return OrderResponse.from(order, orderService.getOrderItems(orderId))
     }
 

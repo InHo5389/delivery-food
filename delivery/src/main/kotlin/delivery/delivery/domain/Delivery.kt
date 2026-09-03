@@ -30,6 +30,11 @@ class Delivery(
     @Column(name = "pickup_longitude", nullable = false)
     val pickupLongitude: BigDecimal,
 
+    // 사장님이 주문 접수 시 입력한 조리 예상 시간을 기준으로 계산한 값. 라이더가 배차
+    // 큐에서 "언제쯤 가면 되는지" 판단하는 근거로 쓴다.
+    @Column(name = "estimated_pickup_at")
+    val estimatedPickupAt: Instant? = null,
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     var status: DeliveryStatus = DeliveryStatus.PENDING,
@@ -64,7 +69,15 @@ class Delivery(
             shopId: Long,
             pickupLatitude: BigDecimal = BigDecimal("37.5665000"),
             pickupLongitude: BigDecimal = BigDecimal("126.9780000"),
+            estimatedPickupAt: Instant? = null,
             status: DeliveryStatus = DeliveryStatus.PENDING,
-        ): Delivery = Delivery(orderId, shopId, pickupLatitude, pickupLongitude, status).also { it.id = id }
+        ): Delivery = Delivery(
+            orderId = orderId,
+            shopId = shopId,
+            pickupLatitude = pickupLatitude,
+            pickupLongitude = pickupLongitude,
+            estimatedPickupAt = estimatedPickupAt,
+            status = status,
+        ).also { it.id = id }
     }
 }

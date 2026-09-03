@@ -3,6 +3,8 @@ package delivery.order.application
 import delivery.auth.domain.Role
 import delivery.common.exception.BusinessException
 import delivery.common.security.AuthenticatedUser
+import delivery.delivery.application.DeliveryService
+import delivery.delivery.domain.Delivery
 import delivery.order.application.dto.CartResult
 import delivery.order.application.dto.CreateOrderCommand
 import delivery.order.application.dto.OrderHistoryQuery
@@ -45,6 +47,7 @@ class OrderServiceTest {
     private val shopService = mockk<ShopService>()
     private val menuService = mockk<MenuService>()
     private val orderTicketService = mockk<OrderTicketService>()
+    private val deliveryService = mockk<DeliveryService>()
     private lateinit var orderService: OrderService
 
     private val customerId = 1L
@@ -54,7 +57,7 @@ class OrderServiceTest {
 
     @BeforeEach
     fun setUp() {
-        orderService = OrderService(orderRepository, orderItemRepository, cartService, paymentService, shopService, menuService, orderTicketService)
+        orderService = OrderService(orderRepository, orderItemRepository, cartService, paymentService, shopService, menuService, orderTicketService, deliveryService)
     }
 
     private fun openShop(minOrderAmount: Long = 0): Shop =
@@ -353,16 +356,18 @@ class OrderServiceTest {
     private val ownerId = 10L
 
     @Test
-    fun `사장님이 PAID 주문을 수락하면 ACCEPTED가 되고 티켓도 반영된다`() {
+    fun `사장님이 PAID 주문을 수락하면 ACCEPTED가 되고 티켓·배차 요청이 함께 생성된다`() {
         val order = Order.withId(1L, customerId, shopId, "홍길동", "01011112222", OrderStatus.PAID)
         every { orderRepository.findById(1L) } returns Optional.of(order)
         every { shopService.getById(shopId) } returns Shop.withId(shopId, ownerId, "가게", "서울", "0212345678")
         every { orderTicketService.markAccepted(1L) } returns OrderTicket.withId(1L, 1L, shopId)
+        every { deliveryService.createDelivery(any()) } returns Delivery.withId(1L, orderId = 1L, shopId = shopId)
 
-        val actual = orderService.acceptOrder(1L, AuthenticatedUser(ownerId, Role.OWNER))
+        val actual = orderService.acceptOrder(1L, AuthenticatedUser(ownerId, Role.OWNER), estimatedCookingMinutes = 15)
 
         assertEquals(OrderStatus.ACCEPTED, actual.status)
         verify { orderTicketService.markAccepted(1L) }
+        verify { deliveryService.createDelivery(any()) }
     }
 
     @Test
@@ -372,7 +377,7 @@ class OrderServiceTest {
         every { shopService.getById(shopId) } returns Shop.withId(shopId, ownerId, "가게", "서울", "0212345678")
 
         val exception = assertThrows<BusinessException> {
-            orderService.acceptOrder(1L, AuthenticatedUser(999L, Role.OWNER))
+            orderService.acceptOrder(1L, AuthenticatedUser(999L, Role.OWNER), estimatedCookingMinutes = 15)
         }
 
         assertEquals(OrderErrorCode.NOT_SHOP_OWNER, exception.errorCode)
@@ -385,7 +390,7 @@ class OrderServiceTest {
         every { shopService.getById(shopId) } returns Shop.withId(shopId, ownerId, "가게", "서울", "0212345678")
 
         val exception = assertThrows<BusinessException> {
-            orderService.acceptOrder(1L, AuthenticatedUser(ownerId, Role.CUSTOMER))
+            orderService.acceptOrder(1L, AuthenticatedUser(ownerId, Role.CUSTOMER), estimatedCookingMinutes = 15)
         }
 
         assertEquals(OrderErrorCode.NOT_SHOP_OWNER, exception.errorCode)
@@ -398,7 +403,7 @@ class OrderServiceTest {
         every { shopService.getById(shopId) } returns Shop.withId(shopId, ownerId, "가게", "서울", "0212345678")
 
         val exception = assertThrows<BusinessException> {
-            orderService.acceptOrder(1L, AuthenticatedUser(ownerId, Role.OWNER))
+            orderService.acceptOrder(1L, AuthenticatedUser(ownerId, Role.OWNER), estimatedCookingMinutes = 15)
         }
 
         assertEquals(OrderErrorCode.INVALID_ORDER_STATUS_TRANSITION, exception.errorCode)

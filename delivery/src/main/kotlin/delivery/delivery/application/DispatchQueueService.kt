@@ -22,7 +22,7 @@ class DispatchQueueService(
 ) {
     fun getQueue(limit: Int): List<DispatchQueueItem> =
         dispatchQueueRepository.findQueue(limit).map {
-            DispatchQueueItem(deliveryId = it.deliveryId, orderId = it.orderId, shopId = it.shopId)
+            DispatchQueueItem(deliveryId = it.deliveryId, orderId = it.orderId, shopId = it.shopId, estimatedPickupAt = it.estimatedPickupAt)
         }
 
     // 큐 맨 앞 배달을 잠근 채로(claimNext) 그 안에서 바로 배정까지 끝내야 "보고 나서
@@ -50,7 +50,7 @@ class DispatchQueueService(
         expirePendingOffers(next.deliveryId)
         rider.goBusy()
 
-        return DispatchQueueItem(deliveryId = next.deliveryId, orderId = next.orderId, shopId = next.shopId)
+        return DispatchQueueItem(deliveryId = next.deliveryId, orderId = next.orderId, shopId = next.shopId, estimatedPickupAt = next.estimatedPickupAt)
     }
 
     // 이 배달이 개별 오퍼(커밋 42-44 경로)로도 다른 라이더들에게 나가 있었을 수 있다.

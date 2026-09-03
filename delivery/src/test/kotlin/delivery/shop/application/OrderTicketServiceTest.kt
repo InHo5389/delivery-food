@@ -81,6 +81,16 @@ class OrderTicketServiceTest {
     }
 
     @Test
+    fun `markCancelled를 호출하면 티켓이 CANCELLED로 바뀐다`() {
+        val ticket = OrderTicket.withId(1L, orderId = 1L, shopId = 1L)
+        every { orderTicketRepository.findByOrderId(1L) } returns ticket
+
+        val actual = orderTicketService.markCancelled(1L)
+
+        assertEquals(OrderTicketStatus.CANCELLED, actual.status)
+    }
+
+    @Test
     fun `markCookingStarted와 markCookingDone을 차례로 호출하면 COOKING을 거쳐 COOKED가 된다`() {
         val ticket = OrderTicket.withId(1L, orderId = 1L, shopId = 1L, status = OrderTicketStatus.ACCEPTED)
         every { orderTicketRepository.findByOrderId(1L) } returns ticket

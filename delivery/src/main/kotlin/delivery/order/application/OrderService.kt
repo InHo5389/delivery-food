@@ -25,9 +25,15 @@ import delivery.shop.application.ShopService
 import delivery.shop.application.dto.CreateOrderTicketCommand
 import delivery.shop.application.dto.OrderTicketItemCommand
 import delivery.shop.domain.Shop
+import org.slf4j.LoggerFactory
 import org.springframework.data.domain.PageRequest
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import java.time.Instant
+import java.time.temporal.ChronoUnit
+
+// 사장님이 이 시간 안에 수락/거절하지 않으면 자동 취소 대상이 된다.
+private const val STALE_ORDER_THRESHOLD_MINUTES = 3L
 
 // ★ 모듈 간 호출은 shopService/menuService를 직접 주입해서 쓴다(Facade를 두지 않음).
 //   지금은 모놀리스라 이벤트를 쓰지 않는다 — ApplicationEvent를 쓰면 "이벤트를 썼다"는
@@ -45,6 +51,8 @@ class OrderService(
     private val orderTicketService: OrderTicketService,
     private val deliveryService: DeliveryService,
 ) {
+    private val logger = LoggerFactory.getLogger(OrderService::class.java)
+
     @Transactional
     fun createOrder(command: CreateOrderCommand): OrderResult {
         // 장바구니가 아예 없는 경우(한 번도 담은 적 없음)와 담긴 항목이 0개인 경우는
@@ -172,9 +180,37 @@ class OrderService(
 
         if (wasPaid) {
             paymentService.refund(order.id!!)
+            // 티켓은 PAID 시점에만 만들어지므로 wasPaid일 때만 정리 대상이 존재한다.
+            orderTicketService.markCancelled(order.id!!)
         }
 
         return order
+    }
+
+    // 사장님이 STALE_ORDER_THRESHOLD_MINUTES 안에 반응하지 않은 주문을 스케줄러가 대신
+    // 취소한다 — 고객이 무한정 기다리지 않도록. 주문 단위로 트랜잭션을 나눠(autoCancelIfStale)
+    // 한 건의 실패가 같은 사이클의 다른 자동 취소를 막지 않게 한다.
+    fun autoCancelStaleOrders(): List<Long> {
+        val threshold = Instant.now().minus(STALE_ORDER_THRESHOLD_MINUTES, ChronoUnit.MINUTES)
+        return orderRepository.findAllByStatusAndUpdatedAtBefore(OrderStatus.PAID, threshold).mapNotNull { stale ->
+            runCatching { autoCancelIfStale(stale.id!!) }
+                .onFailure { logger.error("미접수 주문 자동 취소 실패: orderId={}", stale.id, it) }
+                .map { stale.id }
+                .getOrNull()
+        }
+    }
+
+    // 조회와 취소 사이에 사장님이 먼저 수락/거절했을 수 있으므로 재확인 후에도 여전히
+    // PAID일 때만 취소한다 — 그 사이 상태가 바뀌었다면 조용히 넘어간다(오류 아님).
+    @Transactional
+    fun autoCancelIfStale(orderId: Long) {
+        val order = orderRepository.findById(orderId).orElseThrow { BusinessException(OrderErrorCode.ORDER_NOT_FOUND) }
+        if (order.status != OrderStatus.PAID) {
+            return
+        }
+        order.transitionTo(OrderStatus.CANCELLED)
+        paymentService.refund(orderId)
+        orderTicketService.markCancelled(orderId)
     }
 
     // 배차는 조리 완료(COOKED)가 아니라 접수(ACCEPTED) 시점에 시작한다 — 조리 시간에

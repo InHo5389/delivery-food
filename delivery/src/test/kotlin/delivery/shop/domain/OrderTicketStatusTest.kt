@@ -32,6 +32,18 @@ class OrderTicketStatusTest {
     }
 
     @Test
+    fun `PENDING에서 CANCELLED로 전이할 수 있다`() {
+        assertTrue(OrderTicketStatus.PENDING.canTransitionTo(OrderTicketStatus.CANCELLED))
+    }
+
+    @Test
+    fun `CANCELLED는 최종 상태라 어디로도 전이할 수 없다`() {
+        for (target in OrderTicketStatus.entries) {
+            assertFalse(OrderTicketStatus.CANCELLED.canTransitionTo(target))
+        }
+    }
+
+    @Test
     fun `REJECTED는 최종 상태라 어디로도 전이할 수 없다`() {
         for (target in OrderTicketStatus.entries) {
             assertFalse(OrderTicketStatus.REJECTED.canTransitionTo(target))

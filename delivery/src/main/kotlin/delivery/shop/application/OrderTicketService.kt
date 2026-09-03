@@ -62,6 +62,9 @@ class OrderTicketService(
     @Transactional
     fun markCookingDone(orderId: Long): OrderTicket = transitionByOrderId(orderId, OrderTicketStatus.COOKED)
 
+    @Transactional
+    fun markCancelled(orderId: Long): OrderTicket = transitionByOrderId(orderId, OrderTicketStatus.CANCELLED)
+
     fun getForShop(shopId: Long, requester: AuthenticatedUser): List<OrderTicketResult> {
         assertShopOwner(shopId, requester)
         return orderTicketRepository.findAllByShopIdOrderByCreatedAtDesc(shopId).map { ticket ->

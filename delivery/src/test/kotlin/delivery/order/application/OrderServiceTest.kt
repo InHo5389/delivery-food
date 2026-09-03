@@ -292,15 +292,17 @@ class OrderServiceTest {
     }
 
     @Test
-    fun `PAID 상태의 주문을 취소하면 환불을 시도한다`() {
+    fun `PAID 상태의 주문을 취소하면 환불을 시도하고 티켓도 CANCELLED로 정리된다`() {
         val order = Order.withId(1L, customerId, shopId, "홍길동", "01011112222", OrderStatus.PAID)
         every { orderRepository.findById(1L) } returns Optional.of(order)
         every { paymentService.refund(1L) } returns Payment.withId(1L, 1L, 8000L, PaymentStatus.REFUNDED)
+        every { orderTicketService.markCancelled(1L) } returns OrderTicket.withId(1L, 1L, shopId)
 
         val actual = orderService.cancelOrder(1L, AuthenticatedUser(customerId, Role.CUSTOMER))
 
         assertEquals(OrderStatus.CANCELLED, actual.status)
         verify { paymentService.refund(1L) }
+        verify { orderTicketService.markCancelled(1L) }
     }
 
     @Test
@@ -458,5 +460,72 @@ class OrderServiceTest {
         val actual = orderService.finishCooking(1L, AuthenticatedUser(ownerId, Role.OWNER))
 
         assertEquals(OrderStatus.COOKED, actual.status)
+    }
+
+    @Test
+    fun `여전히 PAID인 주문을 자동 취소하면 CANCELLED가 되고 환불·티켓 정리가 함께 일어난다`() {
+        val order = Order.withId(1L, customerId, shopId, "홍길동", "01011112222", OrderStatus.PAID)
+        every { orderRepository.findById(1L) } returns Optional.of(order)
+        every { paymentService.refund(1L) } returns Payment.withId(1L, 1L, 8000L, PaymentStatus.REFUNDED)
+        every { orderTicketService.markCancelled(1L) } returns OrderTicket.withId(1L, 1L, shopId)
+
+        orderService.autoCancelIfStale(1L)
+
+        assertEquals(OrderStatus.CANCELLED, order.status)
+        verify { paymentService.refund(1L) }
+        verify { orderTicketService.markCancelled(1L) }
+    }
+
+    @Test
+    fun `그 사이 이미 ACCEPTED된 주문은 자동 취소하지 않고 조용히 넘어간다`() {
+        val order = Order.withId(1L, customerId, shopId, "홍길동", "01011112222", OrderStatus.ACCEPTED)
+        every { orderRepository.findById(1L) } returns Optional.of(order)
+
+        orderService.autoCancelIfStale(1L)
+
+        assertEquals(OrderStatus.ACCEPTED, order.status)
+        verify(exactly = 0) { paymentService.refund(any()) }
+        verify(exactly = 0) { orderTicketService.markCancelled(any()) }
+    }
+
+    @Test
+    fun `존재하지 않는 주문을 자동 취소하려 하면 예외가 발생한다`() {
+        every { orderRepository.findById(999L) } returns Optional.empty()
+
+        val exception = assertThrows<BusinessException> { orderService.autoCancelIfStale(999L) }
+
+        assertEquals(OrderErrorCode.ORDER_NOT_FOUND, exception.errorCode)
+    }
+
+    @Test
+    fun `threshold보다 오래 PAID로 머문 주문들을 한 번에 자동 취소한다`() {
+        val stale1 = Order.withId(1L, customerId, shopId, "홍길동", "01011112222", OrderStatus.PAID)
+        val stale2 = Order.withId(2L, customerId, shopId, "홍길동", "01011112222", OrderStatus.PAID)
+        every { orderRepository.findAllByStatusAndUpdatedAtBefore(OrderStatus.PAID, any()) } returns listOf(stale1, stale2)
+        every { orderRepository.findById(1L) } returns Optional.of(stale1)
+        every { orderRepository.findById(2L) } returns Optional.of(stale2)
+        every { paymentService.refund(any()) } returns Payment.withId(1L, 1L, 8000L, PaymentStatus.REFUNDED)
+        every { orderTicketService.markCancelled(any()) } returns OrderTicket.withId(1L, 1L, shopId)
+
+        val actual = orderService.autoCancelStaleOrders()
+
+        assertEquals(listOf(1L, 2L), actual)
+        assertEquals(OrderStatus.CANCELLED, stale1.status)
+        assertEquals(OrderStatus.CANCELLED, stale2.status)
+    }
+
+    @Test
+    fun `한 건이 실패해도 나머지 자동 취소는 계속 진행된다`() {
+        val failing = Order.withId(1L, customerId, shopId, "홍길동", "01011112222", OrderStatus.PAID)
+        val succeeding = Order.withId(2L, customerId, shopId, "홍길동", "01011112222", OrderStatus.PAID)
+        every { orderRepository.findAllByStatusAndUpdatedAtBefore(OrderStatus.PAID, any()) } returns listOf(failing, succeeding)
+        every { orderRepository.findById(1L) } throws RuntimeException("DB 커넥션 오류")
+        every { orderRepository.findById(2L) } returns Optional.of(succeeding)
+        every { paymentService.refund(2L) } returns Payment.withId(1L, 2L, 8000L, PaymentStatus.REFUNDED)
+        every { orderTicketService.markCancelled(2L) } returns OrderTicket.withId(1L, 2L, shopId)
+
+        val actual = orderService.autoCancelStaleOrders()
+
+        assertEquals(listOf(2L), actual)
     }
 }

@@ -8,12 +8,11 @@ import jakarta.persistence.GeneratedValue
 import jakarta.persistence.GenerationType
 import jakarta.persistence.Id
 import jakarta.persistence.Table
-import java.math.BigDecimal
 import java.time.Instant
 
 // delivery_id/rider_id는 같은 delivery 모듈 내 참조라 FK를 허용한다(설계 원칙 5절 —
-// 모듈 간 FK만 금지). score는 오퍼 발송 시점 DispatchScorer의 계산 결과 스냅샷이다 —
-// 이후 라이더 지표가 바뀌어도 이 오퍼가 왜 이 순위였는지 그대로 남는다.
+// 모듈 간 FK만 금지). 반경 내 AVAILABLE 라이더 전원에게 동시에 오퍼를 보내고 먼저
+// 수락하는 사람이 배정되는 선착순 방식이라, 라이더 간 순위를 매길 이유가 없다.
 @Entity
 @Table(name = "dispatch_offer")
 class DispatchOffer(
@@ -22,9 +21,6 @@ class DispatchOffer(
 
     @Column(name = "rider_id", nullable = false)
     val riderId: Long,
-
-    @Column(nullable = false)
-    val score: BigDecimal,
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
@@ -47,8 +43,7 @@ class DispatchOffer(
             id: Long,
             deliveryId: Long,
             riderId: Long,
-            score: BigDecimal = BigDecimal("1.0000"),
             status: DispatchOfferStatus = DispatchOfferStatus.SENT,
-        ): DispatchOffer = DispatchOffer(deliveryId, riderId, score, status).also { it.id = id }
+        ): DispatchOffer = DispatchOffer(deliveryId, riderId, status).also { it.id = id }
     }
 }

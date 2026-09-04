@@ -2,7 +2,6 @@ package delivery.delivery.infrastructure
 
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Repository
-import java.sql.Timestamp
 
 @Repository
 class RiderCandidateRepository(
@@ -18,7 +17,7 @@ class RiderCandidateRepository(
     ): List<RiderCandidateRow> =
         jdbcTemplate.query(
             """
-            SELECT id, recent_delivery_count, acceptance_rate, available_since,
+            SELECT id,
                    ST_Distance_Sphere(
                        POINT(longitude, latitude),
                        POINT(?, ?)
@@ -27,15 +26,7 @@ class RiderCandidateRepository(
             WHERE status = 'AVAILABLE'
             HAVING distance_meters <= ?
             """.trimIndent(),
-            { rs, _ ->
-                RiderCandidateRow(
-                    riderId = rs.getLong("id"),
-                    distanceMeters = rs.getDouble("distance_meters"),
-                    recentDeliveryCount = rs.getInt("recent_delivery_count"),
-                    acceptanceRate = rs.getBigDecimal("acceptance_rate").toDouble(),
-                    availableSince = rs.getTimestamp("available_since")?.let(Timestamp::toInstant),
-                )
-            },
+            { rs, _ -> RiderCandidateRow(riderId = rs.getLong("id")) },
             pickupLongitude, pickupLatitude, radiusMeters,
         )
 }

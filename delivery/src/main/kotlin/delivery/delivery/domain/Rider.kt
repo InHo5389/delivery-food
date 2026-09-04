@@ -29,17 +29,6 @@ class Rider(
     @Column(nullable = false)
     var status: RiderStatus = RiderStatus.OFFLINE,
 
-    // 최근 처리 건수 — 배차 점수화에서 특정 라이더에게 오퍼가 몰리는 것을 막는 데 쓴다.
-    @Column(name = "recent_delivery_count", nullable = false)
-    var recentDeliveryCount: Int = 0,
-
-    @Column(name = "acceptance_rate", nullable = false)
-    var acceptanceRate: BigDecimal = BigDecimal("1.0000"),
-
-    // AVAILABLE로 전환된 시각. 배차 점수화의 "대기시간" 요소를 계산하는 기준이다.
-    @Column(name = "available_since")
-    var availableSince: Instant? = null,
-
     @Column(name = "created_at", nullable = false)
     val createdAt: Instant = Instant.now(),
 
@@ -53,19 +42,16 @@ class Rider(
 
     fun goAvailable() {
         status = RiderStatus.AVAILABLE
-        availableSince = Instant.now()
         updatedAt = Instant.now()
     }
 
     fun goBusy() {
         status = RiderStatus.BUSY
-        availableSince = null
         updatedAt = Instant.now()
     }
 
     fun goOffline() {
         status = RiderStatus.OFFLINE
-        availableSince = null
         updatedAt = Instant.now()
     }
 
@@ -77,17 +63,11 @@ class Rider(
             latitude: BigDecimal = BigDecimal("37.5665000"),
             longitude: BigDecimal = BigDecimal("126.9780000"),
             status: RiderStatus = RiderStatus.AVAILABLE,
-            recentDeliveryCount: Int = 0,
-            acceptanceRate: BigDecimal = BigDecimal("1.0000"),
-            availableSince: Instant? = Instant.now(),
         ): Rider = Rider(
             accountId = accountId,
             latitude = latitude,
             longitude = longitude,
             status = status,
-            recentDeliveryCount = recentDeliveryCount,
-            acceptanceRate = acceptanceRate,
-            availableSince = availableSince,
         ).also { it.id = id }
     }
 }

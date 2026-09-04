@@ -16,7 +16,6 @@ import io.mockk.verify
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
-import java.time.Instant
 import java.util.Optional
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -34,8 +33,7 @@ class DispatchServiceTest {
         every { dispatchOfferRepository.save(any()) } answers { it.invocation.args[0] as DispatchOffer }
     }
 
-    private fun candidateRow(riderId: Long, distanceMeters: Double = 500.0) =
-        RiderCandidateRow(riderId, distanceMeters, recentDeliveryCount = 0, acceptanceRate = 1.0, availableSince = Instant.now())
+    private fun candidateRow(riderId: Long) = RiderCandidateRow(riderId)
 
     @Test
     fun `존재하지 않는 배달을 배차하면 예외가 발생한다`() {
@@ -75,22 +73,21 @@ class DispatchServiceTest {
     }
 
     @Test
-    fun `후보가 4명이어도 상위 3명에게만 오퍼를 보낸다`() {
+    fun `후보가 여러 명이면 전원에게 오퍼를 보낸다`() {
         val delivery = Delivery.withId(1L, orderId = 1L, shopId = 1L)
         every { deliveryRepository.findById(1L) } returns Optional.of(delivery)
         every { dispatchOfferRepository.findAllByDeliveryId(1L) } returns emptyList()
         every { riderCandidateRepository.findAvailableCandidates(any(), any(), any()) } returns listOf(
-            candidateRow(1L, distanceMeters = 100.0),
-            candidateRow(2L, distanceMeters = 200.0),
-            candidateRow(3L, distanceMeters = 300.0),
-            candidateRow(4L, distanceMeters = 2900.0),
+            candidateRow(1L),
+            candidateRow(2L),
+            candidateRow(3L),
+            candidateRow(4L),
         )
 
         val actual = dispatchService.dispatchOne(1L)
 
-        assertEquals(3, actual.offeredRiderIds.size)
-        assertTrue(4L !in actual.offeredRiderIds)
-        verify(exactly = 3) { dispatchOfferRepository.save(any()) }
+        assertEquals(listOf(1L, 2L, 3L, 4L), actual.offeredRiderIds)
+        verify(exactly = 4) { dispatchOfferRepository.save(any()) }
     }
 
     @Test

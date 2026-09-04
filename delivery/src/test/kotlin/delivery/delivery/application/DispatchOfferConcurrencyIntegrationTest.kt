@@ -57,7 +57,7 @@ class DispatchOfferConcurrencyIntegrationTest(
             val rider = riderRepository.save(
                 Rider(System.nanoTime(), BigDecimal("37.5665000"), BigDecimal("126.9780000"), status = RiderStatus.AVAILABLE)
             )
-            dispatchOfferRepository.save(DispatchOffer(deliveryId = delivery.id!!, riderId = rider.id!!, score = BigDecimal("0.$i")))
+            dispatchOfferRepository.save(DispatchOffer(deliveryId = delivery.id!!, riderId = rider.id!!))
         }
 
         val successCount = AtomicInteger(0)

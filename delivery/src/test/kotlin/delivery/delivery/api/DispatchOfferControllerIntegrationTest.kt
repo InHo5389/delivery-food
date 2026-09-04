@@ -63,7 +63,7 @@ class DispatchOfferControllerIntegrationTest(
         )
         delivery.transitionTo(DeliveryStatus.OFFERING)
         deliveryRepository.save(delivery)
-        return dispatchOfferRepository.save(DispatchOffer(deliveryId = delivery.id!!, riderId = riderId, score = BigDecimal("0.9000")))
+        return dispatchOfferRepository.save(DispatchOffer(deliveryId = delivery.id!!, riderId = riderId))
     }
 
     @Test
@@ -116,8 +116,8 @@ class DispatchOfferControllerIntegrationTest(
         )
         delivery.transitionTo(DeliveryStatus.OFFERING)
         deliveryRepository.save(delivery)
-        val firstOffer = dispatchOfferRepository.save(DispatchOffer(deliveryId = delivery.id!!, riderId = firstProfile.id!!, score = BigDecimal("0.9000")))
-        val secondOffer = dispatchOfferRepository.save(DispatchOffer(deliveryId = delivery.id!!, riderId = secondProfile.id!!, score = BigDecimal("0.8000")))
+        val firstOffer = dispatchOfferRepository.save(DispatchOffer(deliveryId = delivery.id!!, riderId = firstProfile.id!!))
+        val secondOffer = dispatchOfferRepository.save(DispatchOffer(deliveryId = delivery.id!!, riderId = secondProfile.id!!))
 
         mockMvc.perform(post("/dispatch-offers/${firstOffer.id}/accept").header("Authorization", "Bearer ${first.token}"))
             .andExpect(status().isOk)

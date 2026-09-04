@@ -6,7 +6,6 @@ import delivery.support.IntegrationTestSupport
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import java.math.BigDecimal
-import java.time.Instant
 import kotlin.test.assertTrue
 
 class RiderCandidateRepositoryIntegrationTest(
@@ -71,24 +70,5 @@ class RiderCandidateRepositoryIntegrationTest(
         val actual = riderCandidateRepository.findAvailableCandidates(pickupLat, pickupLng, radiusMeters = 500_000.0)
 
         assertTrue(actual.any { it.riderId == far.id })
-    }
-
-    @Test
-    fun `available_since가 함께 조회된다`() {
-        val since = Instant.now().minusSeconds(120)
-        val rider = riderRepository.save(
-            Rider(
-                accountId = System.nanoTime(),
-                latitude = BigDecimal("37.5666000"),
-                longitude = BigDecimal("126.9781000"),
-                status = RiderStatus.AVAILABLE,
-                availableSince = since,
-            )
-        )
-
-        val actual = riderCandidateRepository.findAvailableCandidates(pickupLat, pickupLng, radiusMeters = 3000.0)
-            .first { it.riderId == rider.id }
-
-        assertTrue(actual.availableSince != null)
     }
 }

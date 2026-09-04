@@ -23,6 +23,7 @@ import delivery.order.infrastructure.OrderItemRepository
 import delivery.order.infrastructure.OrderRepository
 import delivery.order.infrastructure.SalesSummaryRepository
 import delivery.order.infrastructure.SalesSummaryRow
+import delivery.order.infrastructure.ShopSettlementSourceRepository
 import delivery.shop.application.MenuService
 import delivery.shop.application.OrderTicketService
 import delivery.shop.application.ShopService
@@ -56,6 +57,7 @@ class OrderServiceTest {
     private val orderTicketService = mockk<OrderTicketService>()
     private val deliveryService = mockk<DeliveryService>()
     private val salesSummaryRepository = mockk<SalesSummaryRepository>()
+    private val shopSettlementSourceRepository = mockk<ShopSettlementSourceRepository>()
     private lateinit var orderService: OrderService
 
     private val customerId = 1L
@@ -67,7 +69,7 @@ class OrderServiceTest {
     fun setUp() {
         orderService = OrderService(
             orderRepository, orderItemRepository, cartService, paymentService, shopService, menuService,
-            orderTicketService, deliveryService, salesSummaryRepository,
+            orderTicketService, deliveryService, salesSummaryRepository, shopSettlementSourceRepository,
         )
     }
 

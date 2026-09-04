@@ -14,6 +14,7 @@ import delivery.order.application.dto.OrderResult
 import delivery.order.application.dto.RequestPaymentCommand
 import delivery.order.application.dto.SalesSummaryQuery
 import delivery.order.application.dto.SalesSummaryResult
+import delivery.order.application.dto.ShopSettlementSourceItem
 import delivery.order.domain.CartErrorCode
 import delivery.order.domain.Order
 import delivery.order.domain.OrderErrorCode
@@ -23,6 +24,7 @@ import delivery.order.domain.PaymentStatus
 import delivery.order.infrastructure.OrderItemRepository
 import delivery.order.infrastructure.OrderRepository
 import delivery.order.infrastructure.SalesSummaryRepository
+import delivery.order.infrastructure.ShopSettlementSourceRepository
 import delivery.shop.application.MenuService
 import delivery.shop.application.OrderTicketService
 import delivery.shop.application.ShopService
@@ -58,6 +60,7 @@ class OrderService(
     private val orderTicketService: OrderTicketService,
     private val deliveryService: DeliveryService,
     private val salesSummaryRepository: SalesSummaryRepository,
+    private val shopSettlementSourceRepository: ShopSettlementSourceRepository,
 ) {
     private val logger = LoggerFactory.getLogger(OrderService::class.java)
 
@@ -307,6 +310,18 @@ class OrderService(
         val row = salesSummaryRepository.findSales(query.shopId, start, end)
         return SalesSummaryResult(date = query.date, orderCount = row.orderCount, totalAmount = row.totalAmount)
     }
+
+    // settlement 모듈이 상점 정산을 계산할 때 쓴다(주문 하나하나에 요율을 적용해야 하므로
+    // getSalesSummary처럼 합계 하나가 아니라 주문 단위 목록을 돌려준다).
+    fun getDeliveredOrderAmounts(shopId: Long, from: Instant, to: Instant): List<ShopSettlementSourceItem> =
+        shopSettlementSourceRepository.findDeliveredOrderAmounts(shopId, from, to)
+            .map { ShopSettlementSourceItem(it.orderId, it.amount) }
+
+    // 환불 대상은 Order.status가 아니라 Payment.status=REFUNDED로 판정한다
+    // (ShopSettlementSourceRepository 주석 참조 — 결제 전 취소와 실제 환불을 구분하기 위함).
+    fun getRefundedPaymentAmounts(shopId: Long, from: Instant, to: Instant): List<ShopSettlementSourceItem> =
+        shopSettlementSourceRepository.findRefundedPaymentAmounts(shopId, from, to)
+            .map { ShopSettlementSourceItem(it.orderId, it.amount) }
 
     private fun getOrderForOwner(orderId: Long, requester: AuthenticatedUser): Pair<Order, Shop> {
         val order = orderRepository.findById(orderId).orElseThrow { BusinessException(OrderErrorCode.ORDER_NOT_FOUND) }

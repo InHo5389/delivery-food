@@ -33,6 +33,13 @@ class Settlement(
     @Column(name = "total_amount", nullable = false)
     var totalAmount: Long,
 
+    // 직전 기간 정산액이 음수(환불이 판매보다 컸던 달)였을 때 이번 기간으로 이월된 금액.
+    // totalAmount = 이번 기간 항목 합계 + carriedOverAmount 로 계산된다. 직전 정산 기록
+    // 자체(Settlement.totalAmount)는 확정된 이력이라 소급 수정하지 않고, 이월분만 이번
+    // 기간에 반영한다(월 경계 소급 수정 금지 원칙과 동일한 이유).
+    @Column(name = "carried_over_amount", nullable = false)
+    var carriedOverAmount: Long = 0L,
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     var status: SettlementStatus = SettlementStatus.PENDING,
@@ -69,8 +76,10 @@ class Settlement(
             periodStart: Instant,
             periodEnd: Instant,
             totalAmount: Long = 0,
+            carriedOverAmount: Long = 0,
             status: SettlementStatus = SettlementStatus.PENDING,
         ): Settlement =
-            Settlement(targetType, targetId, periodStart, periodEnd, totalAmount, status).also { it.id = id }
+            Settlement(targetType, targetId, periodStart, periodEnd, totalAmount, carriedOverAmount, status)
+                .also { it.id = id }
     }
 }

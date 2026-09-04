@@ -68,6 +68,7 @@ class SecurityConfig {
                 authorize(HttpMethod.POST, "/deliveries/*/complete", hasRole("RIDER"))
                 authorize(HttpMethod.GET, "/settlements/me", hasAnyRole("OWNER", "RIDER"))
                 authorize(HttpMethod.GET, "/settlements/*/items", hasAnyRole("OWNER", "RIDER", "ADMIN"))
+                authorize(HttpMethod.POST, "/coupons", hasAnyRole("ADMIN", "OWNER"))
                 authorize("/admin/**", hasRole("ADMIN"))
                 authorize(anyRequest, authenticated)
             }

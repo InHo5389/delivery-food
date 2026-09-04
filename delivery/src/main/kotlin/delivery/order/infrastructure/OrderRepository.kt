@@ -15,4 +15,9 @@ interface OrderRepository : JpaRepository<Order, Long> {
 
     // 미접수 주문 자동 취소 스케줄러가 "PAID 상태로 threshold 이전부터 머문 주문"을 찾는 진입점.
     fun findAllByStatusAndUpdatedAtBefore(status: OrderStatus, threshold: Instant): List<Order>
+
+    // 사장님의 주문표(주방 화면) 조회 — 결제 전(CREATED)/결제 실패(PAYMENT_FAILED)는 사장님이
+    // 볼 이유가 없는 상태라 제외한다. idx_orders_shop_id(V9)가 등호 조건(shop_id)을 커버한다 —
+    // NOT IN은 선택도가 낮아(10개 상태 중 2개만 제외) 복합 인덱스를 추가로 정당화하지 않는다.
+    fun findAllByShopIdAndStatusNotInOrderByCreatedAtDesc(shopId: Long, excludedStatuses: List<OrderStatus>): List<Order>
 }

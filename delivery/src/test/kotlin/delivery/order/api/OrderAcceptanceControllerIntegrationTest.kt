@@ -7,6 +7,8 @@ import delivery.auth.infrastructure.JwtProvider
 import delivery.common.security.AuthenticatedUser
 import delivery.delivery.domain.DeliveryStatus
 import delivery.delivery.infrastructure.DeliveryRepository
+import delivery.order.domain.Order
+import delivery.order.infrastructure.OrderRepository
 import delivery.shop.application.MenuService
 import delivery.shop.application.ShopService
 import delivery.shop.application.dto.CreateMenuCommand
@@ -34,6 +36,7 @@ class OrderAcceptanceControllerIntegrationTest(
     @Autowired private val shopService: ShopService,
     @Autowired private val menuService: MenuService,
     @Autowired private val deliveryRepository: DeliveryRepository,
+    @Autowired private val orderRepository: OrderRepository,
 ) : IntegrationTestSupport() {
 
     private data class SignedUpUser(val user: AuthenticatedUser, val token: String)
@@ -234,19 +237,19 @@ class OrderAcceptanceControllerIntegrationTest(
     }
 
     @Test
-    fun `주문이 접수되면 사장님의 티켓 목록에서 조회된다`() {
+    fun `주문이 결제되면 사장님의 주문표 목록에서 조회된다`() {
         val shopWithMenu = setUpOpenShopWithMenu()
         createPaidOrder(shopWithMenu)
 
         mockMvc.perform(get("/order-tickets?shopId=${shopWithMenu.shopId}").header("Authorization", "Bearer ${shopWithMenu.owner.token}"))
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.tickets.length()").value(1))
-            .andExpect(jsonPath("$.tickets[0].status").value("PENDING"))
+            .andExpect(jsonPath("$.tickets[0].status").value("PAID"))
             .andExpect(jsonPath("$.tickets[0].items[0].menuName").value("짜장면"))
     }
 
     @Test
-    fun `주문을 수락하면 티켓 상태도 함께 ACCEPTED로 바뀐다`() {
+    fun `주문을 수락하면 주문표 상태도 ACCEPTED로 바뀐다`() {
         val shopWithMenu = setUpOpenShopWithMenu()
         val orderId = createPaidOrder(shopWithMenu)
         acceptOrder(orderId, shopWithMenu.owner.token)
@@ -258,12 +261,22 @@ class OrderAcceptanceControllerIntegrationTest(
     }
 
     @Test
-    fun `다른 사장님이 티켓 목록을 조회하면 403을 반환한다`() {
+    fun `다른 사장님이 주문표 목록을 조회하면 403을 반환한다`() {
         val shopWithMenu = setUpOpenShopWithMenu()
         createPaidOrder(shopWithMenu)
         val stranger = signup("accept-stranger2@test.com", Role.OWNER)
 
         mockMvc.perform(get("/order-tickets?shopId=${shopWithMenu.shopId}").header("Authorization", "Bearer ${stranger.token}"))
             .andExpect(status().isForbidden)
+    }
+
+    @Test
+    fun `결제 전(CREATED) 주문은 주문표 목록에 나타나지 않는다`() {
+        val shopWithMenu = setUpOpenShopWithMenu()
+        orderRepository.save(Order(customerId = 999L, shopId = shopWithMenu.shopId, customerName = "홍길동", customerPhone = "01011112222"))
+
+        mockMvc.perform(get("/order-tickets?shopId=${shopWithMenu.shopId}").header("Authorization", "Bearer ${shopWithMenu.owner.token}"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.tickets.length()").value(0))
     }
 }

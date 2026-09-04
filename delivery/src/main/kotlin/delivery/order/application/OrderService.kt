@@ -15,6 +15,7 @@ import delivery.order.application.dto.OrderResult
 import delivery.order.application.dto.RequestPaymentCommand
 import delivery.order.application.dto.SalesSummaryQuery
 import delivery.order.application.dto.SalesSummaryResult
+import delivery.order.application.dto.ShopOrderResult
 import delivery.order.application.dto.ShopSettlementSourceItem
 import delivery.order.domain.CartErrorCode
 import delivery.order.domain.Order
@@ -27,9 +28,7 @@ import delivery.order.infrastructure.OrderRepository
 import delivery.order.infrastructure.SalesSummaryRepository
 import delivery.order.infrastructure.ShopSettlementSourceRepository
 import delivery.shop.application.MenuService
-import delivery.shop.application.OrderTicketService
 import delivery.shop.application.ShopService
-import delivery.shop.application.dto.CreateOrderTicketCommand
 import delivery.shop.domain.Shop
 import org.slf4j.LoggerFactory
 import org.springframework.data.domain.PageRequest
@@ -58,7 +57,6 @@ class OrderService(
     private val paymentService: PaymentService,
     private val shopService: ShopService,
     private val menuService: MenuService,
-    private val orderTicketService: OrderTicketService,
     private val deliveryService: DeliveryService,
     private val salesSummaryRepository: SalesSummaryRepository,
     private val shopSettlementSourceRepository: ShopSettlementSourceRepository,
@@ -145,17 +143,6 @@ class OrderService(
 
         if (nextStatus == OrderStatus.PAID) {
             cartService.clear(command.customerId)
-            // 사장님이 접수 여부를 판단할 수 있도록 shop 모듈에 주문 티켓을 만들어둔다.
-            // shop이 order를 다시 호출하지 않도록(순환 참조 방지) 이 방향(order → shop)의
-            // 호출로만 티켓을 생성하고, 이후 수락/거절/조리 액션은 order 모듈이 주도한다.
-            orderTicketService.createTicket(
-                CreateOrderTicketCommand(
-                    orderId = order.id!!,
-                    shopId = order.shopId,
-                    customerName = order.customerName,
-                    totalAmount = cart.totalPrice,
-                )
-            )
         }
 
         return OrderResult(order, items, payment)
@@ -210,8 +197,6 @@ class OrderService(
 
         if (wasPaid) {
             paymentService.refund(order.id!!)
-            // 티켓은 PAID 시점에만 만들어지므로 wasPaid일 때만 정리 대상이 존재한다.
-            orderTicketService.markCancelled(order.id!!)
         }
 
         return order
@@ -241,7 +226,6 @@ class OrderService(
         order.transitionTo(OrderStatus.CANCELLED)
         notifyCustomer(order, "주문이 취소되었습니다.")
         paymentService.refund(orderId)
-        orderTicketService.markCancelled(orderId)
     }
 
     // 배차는 조리 완료(COOKED)가 아니라 접수(ACCEPTED) 시점에 시작한다 — 조리 시간에
@@ -253,7 +237,6 @@ class OrderService(
         val (order, shop) = getOrderForOwner(orderId, requester)
         order.transitionTo(OrderStatus.ACCEPTED)
         notifyCustomer(order, "주문이 접수되었습니다.")
-        orderTicketService.markAccepted(orderId)
         deliveryService.createDelivery(
             CreateDeliveryCommand(
                 orderId = order.id!!,
@@ -272,7 +255,6 @@ class OrderService(
         val (order, _) = getOrderForOwner(orderId, requester)
         order.transitionTo(OrderStatus.REJECTED)
         notifyCustomer(order, "주문이 거절되었습니다.")
-        orderTicketService.markRejected(orderId)
         paymentService.refund(orderId)
         return order
     }
@@ -282,7 +264,6 @@ class OrderService(
         val (order, _) = getOrderForOwner(orderId, requester)
         order.transitionTo(OrderStatus.COOKING)
         notifyCustomer(order, "조리를 시작했습니다.")
-        orderTicketService.markCookingStarted(orderId)
         return order
     }
 
@@ -291,7 +272,6 @@ class OrderService(
         val (order, _) = getOrderForOwner(orderId, requester)
         order.transitionTo(OrderStatus.COOKED)
         notifyCustomer(order, "조리가 완료되었습니다.")
-        orderTicketService.markCookingDone(orderId)
         return order
     }
 
@@ -319,6 +299,30 @@ class OrderService(
         val order = orderRepository.findById(orderId).orElseThrow { BusinessException(OrderErrorCode.ORDER_NOT_FOUND) }
         order.transitionTo(OrderStatus.DELIVERED)
         notifyCustomer(order, "배달이 완료되었습니다.")
+    }
+
+    // 사장님의 주문표(주방 화면) 조회. 예전에는 shop 모듈이 이 값을 order_ticket에
+    // 사본으로 들고 있었으나, 값이 어긋날 일이 없어 사본을 없애고 Order를 상점 관점으로
+    // 걸러 직접 돌려준다 — 상태를 화면에서 어떻게 뭉뚱그려 보여줄지(예: 배달 진행 상태를
+    // "조리완료"로 합쳐 보여줄지)는 이 메서드가 정하지 않는다. 실제 OrderStatus를 그대로
+    // 돌려주고, 화면 전용 해석은 그걸 보여주는 쪽(shop 모듈/클라이언트)의 책임이다.
+    fun getOrdersForShop(shopId: Long, requester: AuthenticatedUser): List<ShopOrderResult> {
+        val shop = shopService.getById(shopId)
+        if (requester.role != Role.OWNER || shop.ownerId != requester.userId) {
+            throw BusinessException(OrderErrorCode.NOT_SHOP_OWNER)
+        }
+        return orderRepository
+            .findAllByShopIdAndStatusNotInOrderByCreatedAtDesc(shopId, listOf(OrderStatus.CREATED, OrderStatus.PAYMENT_FAILED))
+            .map { order ->
+                val items = getOrderItemSummaries(order.id!!)
+                ShopOrderResult(
+                    orderId = order.id!!,
+                    status = order.status.name,
+                    customerName = order.customerName,
+                    totalAmount = items.sumOf { it.menuPrice * it.quantity },
+                    items = items,
+                )
+            }
     }
 
     // "완료된" 매출만 집계 대상으로 본다 — 배달 중이거나 아직 픽업 전인 주문은 취소될

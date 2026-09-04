@@ -91,4 +91,17 @@ class CouponService(
         issuance.use()
         return issuance
     }
+
+    // 만료 배치(커밋 53-11)가 대상 id를 건별로 넘겨 호출한다. reader가 "ISSUED이면서
+    // expiresAt이 지남" 조건으로 골라온 뒤에도, 그 사이 사용자가 먼저 사용해버리면
+    // 상태가 USED로 바뀌어 있을 수 있다 — 그런 경우 IllegalStateException 대신
+    // BusinessException(INVALID_ISSUANCE_STATUS_TRANSITION)이 나므로, 배치 쪽에서
+    // 그 코드만 건너뛰도록 그대로 던진다.
+    @Transactional
+    fun expireIssuance(issuanceId: Long): Issuance {
+        val issuance = issuanceRepository.findById(issuanceId)
+            .orElseThrow { BusinessException(CouponErrorCode.ISSUANCE_NOT_FOUND) }
+        issuance.expire()
+        return issuance
+    }
 }

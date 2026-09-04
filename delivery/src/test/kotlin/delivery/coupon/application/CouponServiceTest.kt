@@ -249,4 +249,33 @@ class CouponServiceTest {
         assertEquals(IssuanceStatus.USED, actual.status)
         assertEquals(true, actual.usedAt != null)
     }
+
+    @Test
+    fun `발급 건을 만료시키면 상태가 EXPIRED로 바뀐다`() {
+        val issuance = Issuance.withId(1L, userId = 1L, couponId = 1L, issuedAt = Instant.now().minusSeconds(10 * 86400), validityDays = 7)
+        every { issuanceRepository.findById(1L) } returns Optional.of(issuance)
+
+        val actual = couponService.expireIssuance(1L)
+
+        assertEquals(IssuanceStatus.EXPIRED, actual.status)
+    }
+
+    @Test
+    fun `존재하지 않는 발급 건을 만료시키려 하면 예외가 발생한다`() {
+        every { issuanceRepository.findById(999L) } returns Optional.empty()
+
+        val exception = assertThrows<BusinessException> { couponService.expireIssuance(999L) }
+
+        assertEquals(CouponErrorCode.ISSUANCE_NOT_FOUND, exception.errorCode)
+    }
+
+    @Test
+    fun `이미 사용된 발급 건을 만료시키려 하면 예외가 발생한다`() {
+        val issuance = Issuance.withId(1L, userId = 1L, couponId = 1L, issuedAt = Instant.now(), validityDays = 7, status = IssuanceStatus.USED)
+        every { issuanceRepository.findById(1L) } returns Optional.of(issuance)
+
+        val exception = assertThrows<BusinessException> { couponService.expireIssuance(1L) }
+
+        assertEquals(CouponErrorCode.INVALID_ISSUANCE_STATUS_TRANSITION, exception.errorCode)
+    }
 }

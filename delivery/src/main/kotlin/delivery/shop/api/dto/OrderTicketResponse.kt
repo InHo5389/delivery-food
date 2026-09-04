@@ -1,6 +1,6 @@
 package delivery.shop.api.dto
 
-import delivery.shop.application.dto.OrderTicketItemResult
+import delivery.order.application.dto.OrderItemSummary
 import delivery.shop.application.dto.OrderTicketResult
 
 data class OrderTicketItemResponse(
@@ -9,7 +9,7 @@ data class OrderTicketItemResponse(
     val quantity: Int,
 ) {
     companion object {
-        fun from(item: OrderTicketItemResult): OrderTicketItemResponse =
+        fun from(item: OrderItemSummary): OrderTicketItemResponse =
             OrderTicketItemResponse(item.menuName, item.menuPrice, item.quantity)
     }
 }
@@ -23,23 +23,18 @@ data class OrderTicketResponse(
     val items: List<OrderTicketItemResponse>,
 ) {
     companion object {
-        fun from(result: OrderTicketResult): OrderTicketResponse =
+        fun from(result: OrderTicketResult, items: List<OrderItemSummary>): OrderTicketResponse =
             OrderTicketResponse(
                 ticketId = result.ticketId,
                 orderId = result.orderId,
                 status = result.status,
                 customerName = result.customerName,
                 totalAmount = result.totalAmount,
-                items = result.items.map(OrderTicketItemResponse::from),
+                items = items.map(OrderTicketItemResponse::from),
             )
     }
 }
 
 data class OrderTicketListResponse(
     val tickets: List<OrderTicketResponse>,
-) {
-    companion object {
-        fun from(results: List<OrderTicketResult>): OrderTicketListResponse =
-            OrderTicketListResponse(results.map(OrderTicketResponse::from))
-    }
-}
+)

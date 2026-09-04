@@ -4,19 +4,15 @@ import delivery.auth.domain.Role
 import delivery.common.exception.BusinessException
 import delivery.common.security.AuthenticatedUser
 import delivery.shop.application.dto.CreateOrderTicketCommand
-import delivery.shop.application.dto.OrderTicketItemCommand
 import delivery.shop.domain.OrderTicket
 import delivery.shop.domain.OrderTicketErrorCode
-import delivery.shop.domain.OrderTicketItem
 import delivery.shop.domain.OrderTicketStatus
 import delivery.shop.domain.Shop
 import delivery.shop.domain.ShopErrorCode
-import delivery.shop.infrastructure.OrderTicketItemRepository
 import delivery.shop.infrastructure.OrderTicketRepository
 import delivery.shop.infrastructure.ShopRepository
 import io.mockk.every
 import io.mockk.mockk
-import io.mockk.verify
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
@@ -26,29 +22,23 @@ import kotlin.test.assertEquals
 class OrderTicketServiceTest {
 
     private val orderTicketRepository = mockk<OrderTicketRepository>()
-    private val orderTicketItemRepository = mockk<OrderTicketItemRepository>()
     private val shopRepository = mockk<ShopRepository>()
     private lateinit var orderTicketService: OrderTicketService
 
     @BeforeEach
     fun setUp() {
-        orderTicketService = OrderTicketService(orderTicketRepository, orderTicketItemRepository, shopRepository)
+        orderTicketService = OrderTicketService(orderTicketRepository, shopRepository)
     }
 
     @Test
-    fun `티켓을 생성하면 항목도 함께 저장된다`() {
+    fun `티켓을 생성한다`() {
         val ticket = OrderTicket.withId(1L, orderId = 1L, shopId = 1L, totalAmount = 16000L)
         every { orderTicketRepository.save(any()) } returns ticket
-        every { orderTicketItemRepository.save(any()) } answers { it.invocation.args[0] as OrderTicketItem }
-        val command = CreateOrderTicketCommand(
-            orderId = 1L, shopId = 1L, customerName = "홍길동", totalAmount = 16000L,
-            items = listOf(OrderTicketItemCommand("짜장면", 8000L, 2)),
-        )
+        val command = CreateOrderTicketCommand(orderId = 1L, shopId = 1L, customerName = "홍길동", totalAmount = 16000L)
 
         val actual = orderTicketService.createTicket(command)
 
         assertEquals(1L, actual.id)
-        verify(exactly = 1) { orderTicketItemRepository.save(any()) }
     }
 
     @Test
@@ -114,18 +104,15 @@ class OrderTicketServiceTest {
     }
 
     @Test
-    fun `사장님이 상점의 티켓 목록을 조회하면 항목까지 포함해서 반환된다`() {
+    fun `사장님이 상점의 티켓 목록을 조회하면 반환된다`() {
         every { shopRepository.findById(1L) } returns Optional.of(Shop.withId(1L, 10L, "가게", "서울", "0212345678"))
         val ticket = OrderTicket.withId(1L, orderId = 1L, shopId = 1L, customerName = "홍길동", totalAmount = 16000L)
         every { orderTicketRepository.findAllByShopIdOrderByCreatedAtDesc(1L) } returns listOf(ticket)
-        every { orderTicketItemRepository.findAllByOrderTicketId(1L) } returns listOf(
-            OrderTicketItem.withId(1L, orderTicketId = 1L, menuName = "짜장면", menuPrice = 8000L, quantity = 2)
-        )
 
         val actual = orderTicketService.getForShop(1L, AuthenticatedUser(10L, Role.OWNER))
 
         assertEquals(1, actual.size)
-        assertEquals(1, actual[0].items.size)
-        assertEquals("짜장면", actual[0].items[0].menuName)
+        assertEquals("홍길동", actual[0].customerName)
+        assertEquals(16000L, actual[0].totalAmount)
     }
 }

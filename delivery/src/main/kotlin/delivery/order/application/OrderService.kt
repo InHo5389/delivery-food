@@ -9,6 +9,7 @@ import delivery.order.application.dto.CreateOrderCommand
 import delivery.order.application.dto.OrderHistoryItem
 import delivery.order.application.dto.OrderHistoryQuery
 import delivery.order.application.dto.OrderHistoryResult
+import delivery.order.application.dto.OrderItemSummary
 import delivery.order.application.dto.OrderResult
 import delivery.order.application.dto.RequestPaymentCommand
 import delivery.order.application.dto.SalesSummaryQuery
@@ -26,7 +27,6 @@ import delivery.shop.application.MenuService
 import delivery.shop.application.OrderTicketService
 import delivery.shop.application.ShopService
 import delivery.shop.application.dto.CreateOrderTicketCommand
-import delivery.shop.application.dto.OrderTicketItemCommand
 import delivery.shop.domain.Shop
 import org.slf4j.LoggerFactory
 import org.springframework.data.domain.PageRequest
@@ -137,7 +137,6 @@ class OrderService(
                     shopId = order.shopId,
                     customerName = order.customerName,
                     totalAmount = cart.totalPrice,
-                    items = items.map { OrderTicketItemCommand(it.menuName, it.menuPrice, it.quantity) },
                 )
             )
         }
@@ -175,6 +174,11 @@ class OrderService(
     }
 
     fun getOrderItems(orderId: Long): List<OrderItem> = orderItemRepository.findAllByOrderId(orderId)
+
+    // shop 모듈처럼 다른 모듈이 주문 항목을 조회할 때 쓴다 — 엔티티(OrderItem)를 그대로
+    // 넘기면 모듈 경계 규칙(DTO만 주고받기)을 어기게 되므로 별도 DTO로 변환해서 반환한다.
+    fun getOrderItemSummaries(orderId: Long): List<OrderItemSummary> =
+        orderItemRepository.findAllByOrderId(orderId).map { OrderItemSummary(it.menuName, it.menuPrice, it.quantity) }
 
     // ACCEPTED 이전(CREATED/PAID)까지만 자유 취소 가능 — 상태머신(OrderStatus)이
     // 이미 이 규칙을 강제하므로 여기서는 별도 시점 검증 없이 transitionTo에 위임한다.

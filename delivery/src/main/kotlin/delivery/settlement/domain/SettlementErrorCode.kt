@@ -13,6 +13,6 @@ enum class SettlementErrorCode(
     COMMISSION_RATE_NOT_FOUND(HttpStatus.NOT_FOUND, "적용할 수수료율을 찾을 수 없습니다."),
     NOT_SETTLEMENT_OWNER(HttpStatus.FORBIDDEN, "본인의 정산만 조회할 수 있습니다."),
     NOT_ADMIN(HttpStatus.FORBIDDEN, "운영자만 처리할 수 있습니다."),
-    INVALID_YEAR_MONTH(HttpStatus.BAD_REQUEST, "연월 형식이 올바르지 않습니다. 예: 2026-03"),
+    INVALID_DATE(HttpStatus.BAD_REQUEST, "날짜 형식이 올바르지 않습니다. 예: 2026-03-09"),
     SHOP_ID_REQUIRED(HttpStatus.BAD_REQUEST, "사장님은 조회할 상점의 shopId가 필요합니다."),
 }

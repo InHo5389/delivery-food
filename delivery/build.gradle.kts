@@ -31,6 +31,7 @@ dependencies {
 	implementation("org.springframework.boot:spring-boot-flyway")
 	implementation("org.flywaydb:flyway-core")
 	implementation("org.flywaydb:flyway-mysql")
+	implementation("org.springframework.boot:spring-boot-starter-batch")
 	implementation("io.jsonwebtoken:jjwt-api:0.12.6")
 	runtimeOnly("io.jsonwebtoken:jjwt-impl:0.12.6")
 	runtimeOnly("io.jsonwebtoken:jjwt-jackson:0.12.6")
@@ -44,6 +45,7 @@ dependencies {
 	testImplementation("com.ninja-squad:springmockk:4.0.2")
 	testImplementation("org.testcontainers:junit-jupiter")
 	testImplementation("org.testcontainers:mysql")
+	testImplementation("org.springframework.batch:spring-batch-test")
 	testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 

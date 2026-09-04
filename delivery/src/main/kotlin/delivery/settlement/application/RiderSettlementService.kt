@@ -11,7 +11,7 @@ import delivery.settlement.infrastructure.SettlementRepository
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.math.BigDecimal
-import java.time.YearMonth
+import java.time.LocalDate
 
 // 배달비는 라이더 몫이라 요율(플랫폼 수수료) 적용 대상이 아니다(01_설계원칙.md, 04_Phase1
 // 커밋 28-29 결정 사항). 그래서 상점 정산과 달리 CommissionRate를 조회하지 않는다.
@@ -28,11 +28,12 @@ class RiderSettlementService(
     private val deliveryService: DeliveryService,
     private val orderService: OrderService,
 ) {
+    // 라이더 정산은 하루 단위다(53-6 — 매일 새벽 3시, 전일 DELIVERED 건 집계).
     // 같은 기간 중복 계산 방지는 사전 조회가 아니라 저장 시점의 유니크 제약으로
     // 보장한다(SettlementDeduplication.kt 참조, ShopSettlementService와 동일한 이유).
     @Transactional
-    fun calculateRiderSettlement(riderId: Long, yearMonth: YearMonth): Settlement {
-        val (start, end) = monthRange(yearMonth)
+    fun calculateRiderSettlement(riderId: Long, date: LocalDate): Settlement {
+        val (start, end) = dayRange(date)
 
         val orderIds = deliveryService.getDeliveredOrderIds(riderId, start, end)
         val deliveryFees = orderService.getDeliveryFees(orderIds)

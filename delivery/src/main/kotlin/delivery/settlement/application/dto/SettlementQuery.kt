@@ -1,7 +1,7 @@
 package delivery.settlement.application.dto
 
 data class MySettlementQuery(
-    val yearMonth: String,
+    val date: String,
     val shopId: Long?,
 )
 

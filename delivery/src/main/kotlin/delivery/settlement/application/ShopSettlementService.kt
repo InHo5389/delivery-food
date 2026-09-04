@@ -16,7 +16,7 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.math.BigDecimal
 import java.math.RoundingMode
-import java.time.YearMonth
+import java.time.LocalDate
 
 // ★ 모듈 간 호출은 OrderService를 직접 주입해서 쓴다(Facade를 두지 않음, 01_설계원칙.md
 //   4절 — 모놀리스 단계에서는 직접 호출이 허용된다).
@@ -27,13 +27,14 @@ class ShopSettlementService(
     private val commissionRateRepository: CommissionRateRepository,
     private val orderService: OrderService,
 ) {
-    // 취소 월에 음수 항목으로 반영하고, 정산액이 음수면 다음 달로 이월한다(원주문 월을
-    // 소급 수정하지 않는다 — 이미 확정·지급된 정산을 되돌리지 않기 위함).
+    // 상점 정산은 주(월~일) 단위다(53-6 — 매주 월요일 새벽 3시, 지난주 집계). 취소 주에
+    // 음수 항목으로 반영하고, 정산액이 음수면 다음 주로 이월한다(원주문 주를 소급
+    // 수정하지 않는다 — 이미 확정·지급된 정산을 되돌리지 않기 위함).
     // 같은 기간 중복 계산 방지는 사전 조회가 아니라 저장 시점의 유니크 제약으로
     // 보장한다(SettlementDeduplication.kt 참조).
     @Transactional
-    fun calculateShopSettlement(shopId: Long, yearMonth: YearMonth): Settlement {
-        val (start, end) = monthRange(yearMonth)
+    fun calculateShopSettlement(shopId: Long, weekStart: LocalDate): Settlement {
+        val (start, end) = weekRange(weekStart)
 
         val rate = commissionRateRepository
             .findTopByRateTypeAndEffectiveFromLessThanEqualOrderByEffectiveFromDesc(RateType.PLATFORM_FEE, start)
@@ -46,7 +47,7 @@ class ShopSettlementService(
         val saleAmounts = sales.map { it.orderId to settleAmount(it.amount, rate) }
         val refundAmounts = refunds.map { it.orderId to -settleAmount(it.amount, appliedRefundRate(it, rate)) }
 
-        val carriedOver = previousCarryOver(shopId, yearMonth)
+        val carriedOver = previousCarryOver(shopId, weekStart)
         val totalAmount = saleAmounts.sumOf { it.second } + refundAmounts.sumOf { it.second } + carriedOver
 
         val settlement = settlementRepository.saveOrThrowDuplicate(
@@ -104,11 +105,10 @@ class ShopSettlementService(
         settlementAmount = settlementAmount,
     )
 
-    // 직전 달 정산이 이미 존재하고 그 결과(totalAmount)가 음수였다면 이번 달로 그대로 이월한다.
+    // 직전 주 정산이 이미 존재하고 그 결과(totalAmount)가 음수였다면 이번 주로 그대로 이월한다.
     // 직전 정산 기록 자체는 확정된 이력이라 건드리지 않는다.
-    private fun previousCarryOver(shopId: Long, yearMonth: YearMonth): Long {
-        val previousMonth = yearMonth.minusMonths(1)
-        val (previousStart, previousEnd) = monthRange(previousMonth)
+    private fun previousCarryOver(shopId: Long, weekStart: LocalDate): Long {
+        val (previousStart, previousEnd) = weekRange(weekStart.minusWeeks(1))
         val previous = settlementRepository.findByTargetTypeAndTargetIdAndPeriodStartAndPeriodEnd(
             SettlementTargetType.SHOP, shopId, previousStart, previousEnd,
         ) ?: return 0L

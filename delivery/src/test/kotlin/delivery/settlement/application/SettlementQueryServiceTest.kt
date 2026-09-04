@@ -26,7 +26,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import java.math.BigDecimal
 import java.time.Instant
-import java.time.YearMonth
+import java.time.LocalDate
 import java.time.ZoneId
 import kotlin.test.assertEquals
 
@@ -44,8 +44,16 @@ class SettlementQueryServiceTest {
     private val riderId = 2L
     private val riderAccountId = 20L
     private val zone = ZoneId.of("Asia/Seoul")
-    private val periodStart = YearMonth.of(2026, 3).atDay(1).atStartOfDay(zone).toInstant()
-    private val periodEnd = YearMonth.of(2026, 4).atDay(1).atStartOfDay(zone).toInstant()
+
+    // 2026-03-09는 월요일이다 — 상점 정산 기간(주)의 시작으로 쓴다.
+    private val monday = LocalDate.of(2026, 3, 9)
+    private val shopPeriodStart = monday.atStartOfDay(zone).toInstant()
+    private val shopPeriodEnd = monday.plusWeeks(1).atStartOfDay(zone).toInstant()
+
+    // 라이더 정산 기간(하루)은 같은 날짜 문자열로 조회하되 하루 범위로 계산된다.
+    private val riderDate = monday
+    private val riderPeriodStart = riderDate.atStartOfDay(zone).toInstant()
+    private val riderPeriodEnd = riderDate.plusDays(1).atStartOfDay(zone).toInstant()
 
     @BeforeEach
     fun setUp() {
@@ -55,21 +63,21 @@ class SettlementQueryServiceTest {
     }
 
     private fun shopSettlement(): Settlement =
-        Settlement.withId(100L, SettlementTargetType.SHOP, shopId, periodStart, periodEnd, totalAmount = 16_000L)
+        Settlement.withId(100L, SettlementTargetType.SHOP, shopId, shopPeriodStart, shopPeriodEnd, totalAmount = 16_000L)
 
     private fun riderSettlement(): Settlement =
-        Settlement.withId(200L, SettlementTargetType.RIDER, riderId, periodStart, periodEnd, totalAmount = 3_000L)
+        Settlement.withId(200L, SettlementTargetType.RIDER, riderId, riderPeriodStart, riderPeriodEnd, totalAmount = 3_000L)
 
     @Test
-    fun `사장님이 shopId와 yearMonth로 본인 상점의 정산을 조회한다`() {
+    fun `사장님이 shopId와 date로 본인 상점의 정산을 조회하면 그 주 정산을 반환한다`() {
         every { shopService.getById(shopId) } returns Shop.withId(shopId, ownerId, "가게", "서울", "0212345678")
         val settlement = shopSettlement()
-        every { settlementRepository.findByTargetTypeAndTargetIdAndPeriodStartAndPeriodEnd(SettlementTargetType.SHOP, shopId, periodStart, periodEnd) } returns settlement
+        every { settlementRepository.findByTargetTypeAndTargetIdAndPeriodStartAndPeriodEnd(SettlementTargetType.SHOP, shopId, shopPeriodStart, shopPeriodEnd) } returns settlement
         every { settlementItemRepository.findAllBySettlementId(100L) } returns listOf(
             SettlementItem.withId(1L, 100L, 101L, SettlementItemType.SALE, amount = 20_000L, appliedFeeRate = BigDecimal("0.2000"), settlementAmount = 16_000L)
         )
 
-        val actual = settlementQueryService.getMySettlement(AuthenticatedUser(ownerId, Role.OWNER), MySettlementQuery("2026-03", shopId))
+        val actual = settlementQueryService.getMySettlement(AuthenticatedUser(ownerId, Role.OWNER), MySettlementQuery(monday.toString(), shopId))
 
         assertEquals(1, actual.orderCount)
         assertEquals(20_000L, actual.grossAmount)
@@ -77,9 +85,22 @@ class SettlementQueryServiceTest {
     }
 
     @Test
+    fun `사장님이 월요일이 아닌 날짜로 조회해도 그 주(월요일 시작)로 보정돼 조회된다`() {
+        every { shopService.getById(shopId) } returns Shop.withId(shopId, ownerId, "가게", "서울", "0212345678")
+        val settlement = shopSettlement()
+        val wednesday = monday.plusDays(2)
+        every { settlementRepository.findByTargetTypeAndTargetIdAndPeriodStartAndPeriodEnd(SettlementTargetType.SHOP, shopId, shopPeriodStart, shopPeriodEnd) } returns settlement
+        every { settlementItemRepository.findAllBySettlementId(100L) } returns emptyList()
+
+        val actual = settlementQueryService.getMySettlement(AuthenticatedUser(ownerId, Role.OWNER), MySettlementQuery(wednesday.toString(), shopId))
+
+        assertEquals(100L, actual.settlementId)
+    }
+
+    @Test
     fun `사장님이 shopId 없이 조회하면 예외가 발생한다`() {
         val exception = assertThrows<BusinessException> {
-            settlementQueryService.getMySettlement(AuthenticatedUser(ownerId, Role.OWNER), MySettlementQuery("2026-03", null))
+            settlementQueryService.getMySettlement(AuthenticatedUser(ownerId, Role.OWNER), MySettlementQuery(monday.toString(), null))
         }
 
         assertEquals(SettlementErrorCode.SHOP_ID_REQUIRED, exception.errorCode)
@@ -90,20 +111,20 @@ class SettlementQueryServiceTest {
         every { shopService.getById(shopId) } returns Shop.withId(shopId, ownerId, "가게", "서울", "0212345678")
 
         val exception = assertThrows<BusinessException> {
-            settlementQueryService.getMySettlement(AuthenticatedUser(999L, Role.OWNER), MySettlementQuery("2026-03", shopId))
+            settlementQueryService.getMySettlement(AuthenticatedUser(999L, Role.OWNER), MySettlementQuery(monday.toString(), shopId))
         }
 
         assertEquals(SettlementErrorCode.NOT_SETTLEMENT_OWNER, exception.errorCode)
     }
 
     @Test
-    fun `라이더가 본인 정산을 조회하면 accountId로 riderId를 찾아 조회한다`() {
+    fun `라이더가 본인 정산을 조회하면 accountId로 riderId를 찾아 그 날짜의 정산을 반환한다`() {
         every { deliveryService.getRiderIdByAccountId(riderAccountId) } returns riderId
         val settlement = riderSettlement()
-        every { settlementRepository.findByTargetTypeAndTargetIdAndPeriodStartAndPeriodEnd(SettlementTargetType.RIDER, riderId, periodStart, periodEnd) } returns settlement
+        every { settlementRepository.findByTargetTypeAndTargetIdAndPeriodStartAndPeriodEnd(SettlementTargetType.RIDER, riderId, riderPeriodStart, riderPeriodEnd) } returns settlement
         every { settlementItemRepository.findAllBySettlementId(200L) } returns emptyList()
 
-        val actual = settlementQueryService.getMySettlement(AuthenticatedUser(riderAccountId, Role.RIDER), MySettlementQuery("2026-03", null))
+        val actual = settlementQueryService.getMySettlement(AuthenticatedUser(riderAccountId, Role.RIDER), MySettlementQuery(riderDate.toString(), null))
 
         assertEquals(SettlementTargetType.RIDER, actual.targetType)
         assertEquals(3_000L, actual.payoutAmount)
@@ -112,7 +133,7 @@ class SettlementQueryServiceTest {
     @Test
     fun `고객 역할로 조회하면 예외가 발생한다`() {
         val exception = assertThrows<BusinessException> {
-            settlementQueryService.getMySettlement(AuthenticatedUser(1L, Role.CUSTOMER), MySettlementQuery("2026-03", null))
+            settlementQueryService.getMySettlement(AuthenticatedUser(1L, Role.CUSTOMER), MySettlementQuery(monday.toString(), null))
         }
 
         assertEquals(SettlementErrorCode.NOT_SETTLEMENT_OWNER, exception.errorCode)
@@ -121,22 +142,22 @@ class SettlementQueryServiceTest {
     @Test
     fun `해당 기간의 정산이 없으면 예외가 발생한다`() {
         every { shopService.getById(shopId) } returns Shop.withId(shopId, ownerId, "가게", "서울", "0212345678")
-        every { settlementRepository.findByTargetTypeAndTargetIdAndPeriodStartAndPeriodEnd(SettlementTargetType.SHOP, shopId, periodStart, periodEnd) } returns null
+        every { settlementRepository.findByTargetTypeAndTargetIdAndPeriodStartAndPeriodEnd(SettlementTargetType.SHOP, shopId, shopPeriodStart, shopPeriodEnd) } returns null
 
         val exception = assertThrows<BusinessException> {
-            settlementQueryService.getMySettlement(AuthenticatedUser(ownerId, Role.OWNER), MySettlementQuery("2026-03", shopId))
+            settlementQueryService.getMySettlement(AuthenticatedUser(ownerId, Role.OWNER), MySettlementQuery(monday.toString(), shopId))
         }
 
         assertEquals(SettlementErrorCode.SETTLEMENT_NOT_FOUND, exception.errorCode)
     }
 
     @Test
-    fun `연월 형식이 잘못되면 예외가 발생한다`() {
+    fun `날짜 형식이 잘못되면 예외가 발생한다`() {
         val exception = assertThrows<BusinessException> {
-            settlementQueryService.getMySettlement(AuthenticatedUser(ownerId, Role.OWNER), MySettlementQuery("2026년3월", shopId))
+            settlementQueryService.getMySettlement(AuthenticatedUser(ownerId, Role.OWNER), MySettlementQuery("2026년3월9일", shopId))
         }
 
-        assertEquals(SettlementErrorCode.INVALID_YEAR_MONTH, exception.errorCode)
+        assertEquals(SettlementErrorCode.INVALID_DATE, exception.errorCode)
     }
 
     @Test
@@ -188,7 +209,7 @@ class SettlementQueryServiceTest {
     @Test
     fun `운영자가 아니면 전체 정산 목록을 조회할 수 없다`() {
         val exception = assertThrows<BusinessException> {
-            settlementQueryService.getAdminSettlements(AuthenticatedUser(ownerId, Role.OWNER), AdminSettlementRangeQuery("2026-01", "2026-03"))
+            settlementQueryService.getAdminSettlements(AuthenticatedUser(ownerId, Role.OWNER), AdminSettlementRangeQuery("2026-03-01", "2026-03-15"))
         }
 
         assertEquals(SettlementErrorCode.NOT_ADMIN, exception.errorCode)
@@ -201,7 +222,7 @@ class SettlementQueryServiceTest {
         } returns listOf(shopSettlement())
         every { settlementItemRepository.findAllBySettlementId(100L) } returns emptyList()
 
-        val actual = settlementQueryService.getAdminSettlements(AuthenticatedUser(999L, Role.ADMIN), AdminSettlementRangeQuery("2026-01", "2026-03"))
+        val actual = settlementQueryService.getAdminSettlements(AuthenticatedUser(999L, Role.ADMIN), AdminSettlementRangeQuery("2026-03-01", "2026-03-15"))
 
         assertEquals(1, actual.size)
     }

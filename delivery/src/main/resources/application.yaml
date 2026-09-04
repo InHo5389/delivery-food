@@ -12,3 +12,12 @@ spring:
     enabled: true
     locations: classpath:db/migration
     baseline-on-migrate: true
+  batch:
+    jdbc:
+      # 배치 스키마(BATCH_JOB_INSTANCE 등)는 V22 마이그레이션으로 이미 만들어져 있다 —
+      # Flyway가 스키마를 전담하므로 Spring Boot가 부팅 시 따로 만들지 않게 한다.
+      initialize-schema: never
+    job:
+      # 등록된 모든 Job을 앱이 뜰 때마다 자동 실행하지 않는다 — SettlementBatchScheduler가
+      # cron 일정에 맞춰 JobLauncher로 명시적으로만 실행한다.
+      enabled: false

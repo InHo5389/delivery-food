@@ -18,7 +18,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import java.math.BigDecimal
 import java.time.Instant
-import java.time.YearMonth
+import java.time.LocalDate
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
@@ -31,7 +31,7 @@ class RiderSettlementServiceTest {
     private lateinit var riderSettlementService: RiderSettlementService
 
     private val riderId = 1L
-    private val march = YearMonth.of(2026, 3)
+    private val date = LocalDate.of(2026, 3, 9)
 
     @BeforeEach
     fun setUp() {
@@ -53,18 +53,18 @@ class RiderSettlementServiceTest {
         every { deliveryService.getDeliveredOrderIds(riderId, any(), any()) } returns listOf(101L, 102L)
         every { orderService.getDeliveryFees(listOf(101L, 102L)) } returns mapOf(101L to 3000L, 102L to 2500L)
 
-        val actual = riderSettlementService.calculateRiderSettlement(riderId, march)
+        val actual = riderSettlementService.calculateRiderSettlement(riderId, date)
 
         assertEquals(5500L, actual.totalAmount)
         assertEquals(SettlementTargetType.RIDER, actual.targetType)
     }
 
     @Test
-    fun `완료한 배달이 없는 달은 0원이다`() {
+    fun `완료한 배달이 없는 날은 0원이다`() {
         every { deliveryService.getDeliveredOrderIds(riderId, any(), any()) } returns emptyList()
         every { orderService.getDeliveryFees(emptyList()) } returns emptyMap()
 
-        val actual = riderSettlementService.calculateRiderSettlement(riderId, march)
+        val actual = riderSettlementService.calculateRiderSettlement(riderId, date)
 
         assertEquals(0L, actual.totalAmount)
     }
@@ -74,7 +74,7 @@ class RiderSettlementServiceTest {
         every { deliveryService.getDeliveredOrderIds(riderId, any(), any()) } returns listOf(101L)
         every { orderService.getDeliveryFees(listOf(101L)) } returns mapOf(101L to 0L)
 
-        val actual = riderSettlementService.calculateRiderSettlement(riderId, march)
+        val actual = riderSettlementService.calculateRiderSettlement(riderId, date)
 
         assertEquals(0L, actual.totalAmount)
     }
@@ -86,7 +86,7 @@ class RiderSettlementServiceTest {
         val itemsSlot = slot<List<SettlementItem>>()
         every { settlementItemRepository.saveAll(capture(itemsSlot)) } returns emptyList()
 
-        riderSettlementService.calculateRiderSettlement(riderId, march)
+        riderSettlementService.calculateRiderSettlement(riderId, date)
 
         val item = itemsSlot.captured.single()
         assertEquals(BigDecimal("0.0000"), item.appliedFeeRate)
@@ -100,22 +100,22 @@ class RiderSettlementServiceTest {
         every { orderService.getDeliveryFees(listOf(101L)) } returns mapOf(101L to 3000L)
         every { settlementRepository.save(any()) } throws DataIntegrityViolationException("uk_settlement_target_period")
 
-        val exception = assertThrows<BusinessException> { riderSettlementService.calculateRiderSettlement(riderId, march) }
+        val exception = assertThrows<BusinessException> { riderSettlementService.calculateRiderSettlement(riderId, date) }
 
         assertEquals(SettlementErrorCode.SETTLEMENT_ALREADY_EXISTS, exception.errorCode)
     }
 
     @Test
-    fun `월 경계는 KST 기준 그 달 1일 00시부터 다음 달 1일 00시 직전까지다`() {
+    fun `일 단위 경계는 KST 기준 그날 00시부터 다음날 00시 직전까지다`() {
         val startSlot = slot<Instant>()
         val endSlot = slot<Instant>()
         every { deliveryService.getDeliveredOrderIds(riderId, capture(startSlot), capture(endSlot)) } returns emptyList()
         every { orderService.getDeliveryFees(any()) } returns emptyMap()
 
-        riderSettlementService.calculateRiderSettlement(riderId, march)
+        riderSettlementService.calculateRiderSettlement(riderId, date)
 
         val zone = java.time.ZoneId.of("Asia/Seoul")
-        assertTrue(startSlot.captured == march.atDay(1).atStartOfDay(zone).toInstant())
-        assertTrue(endSlot.captured == march.plusMonths(1).atDay(1).atStartOfDay(zone).toInstant())
+        assertTrue(startSlot.captured == date.atStartOfDay(zone).toInstant())
+        assertTrue(endSlot.captured == date.plusDays(1).atStartOfDay(zone).toInstant())
     }
 }

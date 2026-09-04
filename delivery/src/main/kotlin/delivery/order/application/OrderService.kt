@@ -5,6 +5,7 @@ import delivery.common.exception.BusinessException
 import delivery.common.security.AuthenticatedUser
 import delivery.delivery.application.DeliveryService
 import delivery.delivery.application.dto.CreateDeliveryCommand
+import delivery.notification.application.NotificationService
 import delivery.order.application.dto.CreateOrderCommand
 import delivery.order.application.dto.OrderHistoryItem
 import delivery.order.application.dto.OrderHistoryQuery
@@ -61,8 +62,18 @@ class OrderService(
     private val deliveryService: DeliveryService,
     private val salesSummaryRepository: SalesSummaryRepository,
     private val shopSettlementSourceRepository: ShopSettlementSourceRepository,
+    private val notificationService: NotificationService,
 ) {
     private val logger = LoggerFactory.getLogger(OrderService::class.java)
+
+    // 고객에게 주문 상태 변경을 실시간(SSE)으로 알린다(커밋 54~63). 알림 발송 실패가
+    // 주문 상태 전이 자체를 막을 이유는 없지만, 지금은 별도 트랜잭션/재시도로 감싸지
+    // 않는다 — NotificationService.notify()가 이미 SSE 전송 실패(IOException)를
+    // 내부에서 흡수하고, DB 저장 실패 정도의 심각한 오류라면 주문 트랜잭션과 함께
+    // 롤백되는 편이 알림 없이 상태만 바뀌는 것보다 낫다.
+    private fun notifyCustomer(order: Order, message: String) {
+        notificationService.notify(order.customerId, order.id!!, message)
+    }
 
     @Transactional
     fun createOrder(command: CreateOrderCommand): OrderResult {
@@ -195,6 +206,7 @@ class OrderService(
         val wasPaid = order.status == OrderStatus.PAID
 
         order.transitionTo(OrderStatus.CANCELLED)
+        notifyCustomer(order, "주문이 취소되었습니다.")
 
         if (wasPaid) {
             paymentService.refund(order.id!!)
@@ -227,6 +239,7 @@ class OrderService(
             return
         }
         order.transitionTo(OrderStatus.CANCELLED)
+        notifyCustomer(order, "주문이 취소되었습니다.")
         paymentService.refund(orderId)
         orderTicketService.markCancelled(orderId)
     }
@@ -239,6 +252,7 @@ class OrderService(
     fun acceptOrder(orderId: Long, requester: AuthenticatedUser, estimatedCookingMinutes: Int): Order {
         val (order, shop) = getOrderForOwner(orderId, requester)
         order.transitionTo(OrderStatus.ACCEPTED)
+        notifyCustomer(order, "주문이 접수되었습니다.")
         orderTicketService.markAccepted(orderId)
         deliveryService.createDelivery(
             CreateDeliveryCommand(
@@ -257,6 +271,7 @@ class OrderService(
     fun rejectOrder(orderId: Long, requester: AuthenticatedUser): Order {
         val (order, _) = getOrderForOwner(orderId, requester)
         order.transitionTo(OrderStatus.REJECTED)
+        notifyCustomer(order, "주문이 거절되었습니다.")
         orderTicketService.markRejected(orderId)
         paymentService.refund(orderId)
         return order
@@ -266,6 +281,7 @@ class OrderService(
     fun startCooking(orderId: Long, requester: AuthenticatedUser): Order {
         val (order, _) = getOrderForOwner(orderId, requester)
         order.transitionTo(OrderStatus.COOKING)
+        notifyCustomer(order, "조리를 시작했습니다.")
         orderTicketService.markCookingStarted(orderId)
         return order
     }
@@ -274,6 +290,7 @@ class OrderService(
     fun finishCooking(orderId: Long, requester: AuthenticatedUser): Order {
         val (order, _) = getOrderForOwner(orderId, requester)
         order.transitionTo(OrderStatus.COOKED)
+        notifyCustomer(order, "조리가 완료되었습니다.")
         orderTicketService.markCookingDone(orderId)
         return order
     }
@@ -287,18 +304,21 @@ class OrderService(
     fun markRiderAssigned(orderId: Long) {
         val order = orderRepository.findById(orderId).orElseThrow { BusinessException(OrderErrorCode.ORDER_NOT_FOUND) }
         order.transitionTo(OrderStatus.RIDER_ASSIGNED)
+        notifyCustomer(order, "라이더가 배정되었습니다.")
     }
 
     @Transactional
     fun markPickedUp(orderId: Long) {
         val order = orderRepository.findById(orderId).orElseThrow { BusinessException(OrderErrorCode.ORDER_NOT_FOUND) }
         order.transitionTo(OrderStatus.PICKED_UP)
+        notifyCustomer(order, "라이더가 음식을 픽업했습니다.")
     }
 
     @Transactional
     fun markDelivered(orderId: Long) {
         val order = orderRepository.findById(orderId).orElseThrow { BusinessException(OrderErrorCode.ORDER_NOT_FOUND) }
         order.transitionTo(OrderStatus.DELIVERED)
+        notifyCustomer(order, "배달이 완료되었습니다.")
     }
 
     // "완료된" 매출만 집계 대상으로 본다 — 배달 중이거나 아직 픽업 전인 주문은 취소될

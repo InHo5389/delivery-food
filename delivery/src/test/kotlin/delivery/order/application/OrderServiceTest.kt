@@ -5,6 +5,7 @@ import delivery.common.exception.BusinessException
 import delivery.common.security.AuthenticatedUser
 import delivery.delivery.application.DeliveryService
 import delivery.delivery.domain.Delivery
+import delivery.notification.application.NotificationService
 import delivery.order.application.dto.CartResult
 import delivery.order.application.dto.CreateOrderCommand
 import delivery.order.application.dto.OrderHistoryQuery
@@ -58,6 +59,7 @@ class OrderServiceTest {
     private val deliveryService = mockk<DeliveryService>()
     private val salesSummaryRepository = mockk<SalesSummaryRepository>()
     private val shopSettlementSourceRepository = mockk<ShopSettlementSourceRepository>()
+    private val notificationService = mockk<NotificationService>(relaxed = true)
     private lateinit var orderService: OrderService
 
     private val customerId = 1L
@@ -70,6 +72,7 @@ class OrderServiceTest {
         orderService = OrderService(
             orderRepository, orderItemRepository, cartService, paymentService, shopService, menuService,
             orderTicketService, deliveryService, salesSummaryRepository, shopSettlementSourceRepository,
+            notificationService,
         )
     }
 
@@ -347,6 +350,7 @@ class OrderServiceTest {
 
         assertEquals(OrderStatus.CANCELLED, actual.status)
         verify(exactly = 0) { paymentService.refund(any()) }
+        verify { notificationService.notify(customerId, 1L, "주문이 취소되었습니다.") }
     }
 
     @Test
@@ -428,6 +432,7 @@ class OrderServiceTest {
         assertEquals(OrderStatus.ACCEPTED, actual.status)
         verify { orderTicketService.markAccepted(1L) }
         verify { deliveryService.createDelivery(any()) }
+        verify { notificationService.notify(customerId, 1L, "주문이 접수되었습니다.") }
     }
 
     @Test
@@ -481,6 +486,7 @@ class OrderServiceTest {
 
         assertEquals(OrderStatus.REJECTED, actual.status)
         verify { paymentService.refund(1L) }
+        verify { notificationService.notify(customerId, 1L, "주문이 거절되었습니다.") }
     }
 
     @Test
@@ -493,6 +499,7 @@ class OrderServiceTest {
         val actual = orderService.startCooking(1L, AuthenticatedUser(ownerId, Role.OWNER))
 
         assertEquals(OrderStatus.COOKING, actual.status)
+        verify { notificationService.notify(customerId, 1L, "조리를 시작했습니다.") }
     }
 
     @Test
@@ -518,6 +525,7 @@ class OrderServiceTest {
         val actual = orderService.finishCooking(1L, AuthenticatedUser(ownerId, Role.OWNER))
 
         assertEquals(OrderStatus.COOKED, actual.status)
+        verify { notificationService.notify(customerId, 1L, "조리가 완료되었습니다.") }
     }
 
     @Test
@@ -532,6 +540,7 @@ class OrderServiceTest {
         assertEquals(OrderStatus.CANCELLED, order.status)
         verify { paymentService.refund(1L) }
         verify { orderTicketService.markCancelled(1L) }
+        verify { notificationService.notify(customerId, 1L, "주문이 취소되었습니다.") }
     }
 
     @Test
@@ -544,6 +553,49 @@ class OrderServiceTest {
         assertEquals(OrderStatus.ACCEPTED, order.status)
         verify(exactly = 0) { paymentService.refund(any()) }
         verify(exactly = 0) { orderTicketService.markCancelled(any()) }
+        verify(exactly = 0) { notificationService.notify(any(), any(), any()) }
+    }
+
+    @Test
+    fun `라이더가 배정되면 고객에게 알림을 보낸다`() {
+        val order = Order.withId(1L, customerId, shopId, "홍길동", "01011112222", status = OrderStatus.ACCEPTED)
+        every { orderRepository.findById(1L) } returns Optional.of(order)
+
+        orderService.markRiderAssigned(1L)
+
+        assertEquals(OrderStatus.RIDER_ASSIGNED, order.status)
+        verify { notificationService.notify(customerId, 1L, "라이더가 배정되었습니다.") }
+    }
+
+    @Test
+    fun `존재하지 않는 주문에 라이더를 배정하려 하면 예외가 발생한다`() {
+        every { orderRepository.findById(999L) } returns Optional.empty()
+
+        val exception = assertThrows<BusinessException> { orderService.markRiderAssigned(999L) }
+
+        assertEquals(OrderErrorCode.ORDER_NOT_FOUND, exception.errorCode)
+    }
+
+    @Test
+    fun `픽업되면 고객에게 알림을 보낸다`() {
+        val order = Order.withId(1L, customerId, shopId, "홍길동", "01011112222", status = OrderStatus.COOKED)
+        every { orderRepository.findById(1L) } returns Optional.of(order)
+
+        orderService.markPickedUp(1L)
+
+        assertEquals(OrderStatus.PICKED_UP, order.status)
+        verify { notificationService.notify(customerId, 1L, "라이더가 음식을 픽업했습니다.") }
+    }
+
+    @Test
+    fun `배달완료되면 고객에게 알림을 보낸다`() {
+        val order = Order.withId(1L, customerId, shopId, "홍길동", "01011112222", status = OrderStatus.PICKED_UP)
+        every { orderRepository.findById(1L) } returns Optional.of(order)
+
+        orderService.markDelivered(1L)
+
+        assertEquals(OrderStatus.DELIVERED, order.status)
+        verify { notificationService.notify(customerId, 1L, "배달이 완료되었습니다.") }
     }
 
     @Test

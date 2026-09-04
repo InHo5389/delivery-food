@@ -7,6 +7,7 @@ import delivery.coupon.application.dto.CreateCouponCommand
 import delivery.coupon.domain.Coupon
 import delivery.coupon.domain.CouponErrorCode
 import delivery.coupon.domain.Issuance
+import delivery.coupon.domain.IssuanceStatus
 import delivery.coupon.infrastructure.CouponRepository
 import delivery.coupon.infrastructure.IssuanceRepository
 import delivery.shop.application.ShopService
@@ -20,6 +21,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.springframework.dao.DataIntegrityViolationException
 import java.time.Instant
+import java.util.Optional
 import kotlin.test.assertEquals
 
 class CouponServiceTest {
@@ -185,5 +187,66 @@ class CouponServiceTest {
 
         assertEquals(listOf(issuance), actual)
         verify(exactly = 1) { issuanceRepository.findAllByUserId(1L) }
+    }
+
+    @Test
+    fun `존재하지 않는 발급 건을 사용하려 하면 예외가 발생한다`() {
+        every { issuanceRepository.findById(999L) } returns Optional.empty()
+
+        val exception = assertThrows<BusinessException> { couponService.use(999L, 1L) }
+
+        assertEquals(CouponErrorCode.ISSUANCE_NOT_FOUND, exception.errorCode)
+    }
+
+    @Test
+    fun `남의 발급 건을 사용하려 하면 예외가 발생한다`() {
+        val issuance = Issuance.withId(1L, userId = 1L, couponId = 1L, issuedAt = Instant.now(), validityDays = 7)
+        every { issuanceRepository.findById(1L) } returns Optional.of(issuance)
+
+        val exception = assertThrows<BusinessException> { couponService.use(1L, 999L) }
+
+        assertEquals(CouponErrorCode.NOT_OWNER, exception.errorCode)
+    }
+
+    @Test
+    fun `이미 사용한 발급 건을 다시 사용하려 하면 예외가 발생한다`() {
+        val issuance = Issuance.withId(1L, userId = 1L, couponId = 1L, issuedAt = Instant.now(), validityDays = 7, status = IssuanceStatus.USED)
+        every { issuanceRepository.findById(1L) } returns Optional.of(issuance)
+
+        val exception = assertThrows<BusinessException> { couponService.use(1L, 1L) }
+
+        assertEquals(CouponErrorCode.ALREADY_USED, exception.errorCode)
+    }
+
+    @Test
+    fun `상태가 EXPIRED인 발급 건을 사용하려 하면 예외가 발생한다`() {
+        val issuance = Issuance.withId(1L, userId = 1L, couponId = 1L, issuedAt = Instant.now().minusSeconds(1_000_000), validityDays = 7, status = IssuanceStatus.EXPIRED)
+        every { issuanceRepository.findById(1L) } returns Optional.of(issuance)
+
+        val exception = assertThrows<BusinessException> { couponService.use(1L, 1L) }
+
+        assertEquals(CouponErrorCode.EXPIRED, exception.errorCode)
+    }
+
+    @Test
+    fun `상태는 ISSUED이지만 유효기간이 지났으면 사용할 수 없다`() {
+        val issuedAt = Instant.now().minusSeconds(10 * 86400)
+        val issuance = Issuance.withId(1L, userId = 1L, couponId = 1L, issuedAt = issuedAt, validityDays = 7)
+        every { issuanceRepository.findById(1L) } returns Optional.of(issuance)
+
+        val exception = assertThrows<BusinessException> { couponService.use(1L, 1L) }
+
+        assertEquals(CouponErrorCode.EXPIRED, exception.errorCode)
+    }
+
+    @Test
+    fun `유효한 발급 건을 사용하면 상태가 USED로 바뀌고 사용시각이 기록된다`() {
+        val issuance = Issuance.withId(1L, userId = 1L, couponId = 1L, issuedAt = Instant.now(), validityDays = 7)
+        every { issuanceRepository.findById(1L) } returns Optional.of(issuance)
+
+        val actual = couponService.use(1L, 1L)
+
+        assertEquals(IssuanceStatus.USED, actual.status)
+        assertEquals(true, actual.usedAt != null)
     }
 }

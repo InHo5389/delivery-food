@@ -14,4 +14,7 @@ enum class CouponErrorCode(
     ALREADY_ISSUED(HttpStatus.CONFLICT, "이미 발급받은 쿠폰입니다."),
     NOT_OWNER(HttpStatus.FORBIDDEN, "본인 소유가 아닙니다."),
     SHOP_ID_REQUIRED(HttpStatus.BAD_REQUEST, "사장님은 쿠폰을 발행할 상점의 shopId가 필요합니다."),
+    ISSUANCE_NOT_FOUND(HttpStatus.NOT_FOUND, "발급 내역을 찾을 수 없습니다."),
+    ALREADY_USED(HttpStatus.CONFLICT, "이미 사용한 쿠폰입니다."),
+    EXPIRED(HttpStatus.CONFLICT, "유효기간이 지난 쿠폰입니다."),
 }

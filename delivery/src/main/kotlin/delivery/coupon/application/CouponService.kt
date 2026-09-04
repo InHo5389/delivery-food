@@ -7,6 +7,7 @@ import delivery.coupon.application.dto.CreateCouponCommand
 import delivery.coupon.domain.Coupon
 import delivery.coupon.domain.CouponErrorCode
 import delivery.coupon.domain.Issuance
+import delivery.coupon.domain.IssuanceStatus
 import delivery.coupon.infrastructure.CouponRepository
 import delivery.coupon.infrastructure.IssuanceRepository
 import delivery.shop.application.ShopService
@@ -67,4 +68,27 @@ class CouponService(
     }
 
     fun getMyIssuances(userId: Long): List<Issuance> = issuanceRepository.findAllByUserId(userId)
+
+    // 남의 발급 건을 사용하려는 시도는 order 모듈의 404 정책과 달리 403(NOT_OWNER)으로
+    // 응답한다 — 발급 ID는 사용자가 스스로 발급받아 알고 있는 값이라 존재 자체를 숨길
+    // 필요가 order만큼 크지 않다(커밋 53-10 문서).
+    //
+    // expiresAt이 지났지만 만료 배치(커밋 53-11)가 아직 EXPIRED로 전환하지 않은 ISSUED
+    // 건도 여기서 시간을 직접 비교해 막는다 — 배치 주기 동안의 지연 사용을 막기 위함.
+    @Transactional
+    fun use(issuanceId: Long, userId: Long): Issuance {
+        val issuance = issuanceRepository.findById(issuanceId)
+            .orElseThrow { BusinessException(CouponErrorCode.ISSUANCE_NOT_FOUND) }
+        if (issuance.userId != userId) {
+            throw BusinessException(CouponErrorCode.NOT_OWNER)
+        }
+        if (issuance.status == IssuanceStatus.USED) {
+            throw BusinessException(CouponErrorCode.ALREADY_USED)
+        }
+        if (issuance.status == IssuanceStatus.EXPIRED || issuance.expiresAt.isBefore(Instant.now())) {
+            throw BusinessException(CouponErrorCode.EXPIRED)
+        }
+        issuance.use()
+        return issuance
+    }
 }

@@ -9,6 +9,7 @@ import delivery.auth.infrastructure.JwtProvider
 import delivery.common.security.AuthenticatedUser
 import delivery.coupon.application.CouponService
 import delivery.coupon.domain.Coupon
+import delivery.coupon.domain.Issuance
 import delivery.coupon.infrastructure.CouponRepository
 import delivery.coupon.infrastructure.IssuanceRepository
 import delivery.shop.application.ShopService
@@ -210,6 +211,63 @@ class CouponControllerIntegrationTest(
         mockMvc.perform(get("/users/me/issuances").header("Authorization", "Bearer ${customer.token}"))
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.issuances.length()").value(0))
+    }
+
+    @Test
+    fun `발급받은 쿠폰을 사용하면 200과 USED 상태를 반환한다`() {
+        val customer = signup("coupon-use1@test.com", Role.CUSTOMER)
+        val coupon = newCoupon()
+        val issuance = couponService.issue(coupon.id!!, customer.user.userId)
+
+        mockMvc.perform(post("/issuances/${issuance.id}/use").header("Authorization", "Bearer ${customer.token}"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.status").value("USED"))
+    }
+
+    @Test
+    fun `존재하지 않는 발급 건을 사용하려 하면 404를 반환한다`() {
+        val customer = signup("coupon-use2@test.com", Role.CUSTOMER)
+
+        mockMvc.perform(post("/issuances/999999/use").header("Authorization", "Bearer ${customer.token}"))
+            .andExpect(status().isNotFound)
+    }
+
+    @Test
+    fun `남의 발급 건을 사용하려 하면 403을 반환한다`() {
+        val owner = signup("coupon-use3@test.com", Role.CUSTOMER)
+        val stranger = signup("coupon-use4@test.com", Role.CUSTOMER)
+        val coupon = newCoupon()
+        val issuance = couponService.issue(coupon.id!!, owner.user.userId)
+
+        mockMvc.perform(post("/issuances/${issuance.id}/use").header("Authorization", "Bearer ${stranger.token}"))
+            .andExpect(status().isForbidden)
+            .andExpect(jsonPath("$.code").value("NOT_OWNER"))
+    }
+
+    @Test
+    fun `이미 사용한 발급 건을 다시 사용하려 하면 409를 반환한다`() {
+        val customer = signup("coupon-use5@test.com", Role.CUSTOMER)
+        val coupon = newCoupon()
+        val issuance = couponService.issue(coupon.id!!, customer.user.userId)
+        mockMvc.perform(post("/issuances/${issuance.id}/use").header("Authorization", "Bearer ${customer.token}"))
+            .andExpect(status().isOk)
+
+        mockMvc.perform(post("/issuances/${issuance.id}/use").header("Authorization", "Bearer ${customer.token}"))
+            .andExpect(status().isConflict)
+            .andExpect(jsonPath("$.code").value("ALREADY_USED"))
+    }
+
+    @Test
+    fun `유효기간이 지난 발급 건을 사용하려 하면 409를 반환한다`() {
+        val customer = signup("coupon-use6@test.com", Role.CUSTOMER)
+        val coupon = newCoupon(validityDays = 1)
+        val expiredIssuance = issuanceRepository.save(
+            Issuance(userId = customer.user.userId, couponId = coupon.id!!, issuedAt = Instant.now().minusSeconds(10 * 86400), validityDays = 1)
+        )
+
+        mockMvc.perform(post("/issuances/${expiredIssuance.id}/use").header("Authorization", "Bearer ${customer.token}"))
+            .andExpect(status().isConflict)
+            .andExpect(jsonPath("$.code").value("EXPIRED"))
     }
 
     // 커밋 53-9 PAAR의 동시성 검증 시나리오 — DB 비관적 락(FOR UPDATE)이 재고를 초과해

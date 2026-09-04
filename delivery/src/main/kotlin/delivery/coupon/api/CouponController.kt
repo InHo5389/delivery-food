@@ -38,4 +38,10 @@ class CouponController(
     fun getMyIssuances(
         @AuthenticationPrincipal requester: AuthenticatedUser,
     ): IssuanceListResponse = IssuanceListResponse(couponService.getMyIssuances(requester.userId).map(IssuanceResponse::from))
+
+    @PostMapping("/issuances/{issuanceId}/use")
+    fun use(
+        @PathVariable issuanceId: Long,
+        @AuthenticationPrincipal requester: AuthenticatedUser,
+    ): IssuanceResponse = IssuanceResponse.from(couponService.use(issuanceId, requester.userId))
 }

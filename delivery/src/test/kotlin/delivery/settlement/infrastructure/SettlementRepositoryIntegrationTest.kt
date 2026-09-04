@@ -4,7 +4,9 @@ import delivery.settlement.domain.Settlement
 import delivery.settlement.domain.SettlementTargetType
 import delivery.support.IntegrationTestSupport
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.dao.DataIntegrityViolationException
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 import kotlin.test.assertEquals
@@ -69,5 +71,19 @@ class SettlementRepositoryIntegrationTest(
 
         assertEquals(2, actual.size)
         assertEquals(april.id, actual[0].id)
+    }
+
+    // V18 마이그레이션의 uk_settlement_target_period 유니크 제약이 실제로 DB 수준에서
+    // 중복을 막는지 확인한다 — 53-5에서 애플리케이션 사전 조회 대신 이 제약에 의존하기로
+    // 했으므로, 제약 자체가 없으면 SettlementDeduplication.saveOrThrowDuplicate가
+    // 아무것도 막지 못한다.
+    @Test
+    fun `같은 대상 같은 기간의 정산을 두 번 저장하면 유니크 제약 위반이 발생한다`() {
+        val targetId = System.nanoTime()
+        settlementRepository.save(Settlement(SettlementTargetType.SHOP, targetId, periodStart, periodEnd, totalAmount = 24_000L))
+
+        assertThrows<DataIntegrityViolationException> {
+            settlementRepository.saveAndFlush(Settlement(SettlementTargetType.SHOP, targetId, periodStart, periodEnd, totalAmount = 1_000L))
+        }
     }
 }

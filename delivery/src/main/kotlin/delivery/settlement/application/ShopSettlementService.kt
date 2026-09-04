@@ -29,16 +29,11 @@ class ShopSettlementService(
 ) {
     // 취소 월에 음수 항목으로 반영하고, 정산액이 음수면 다음 달로 이월한다(원주문 월을
     // 소급 수정하지 않는다 — 이미 확정·지급된 정산을 되돌리지 않기 위함).
+    // 같은 기간 중복 계산 방지는 사전 조회가 아니라 저장 시점의 유니크 제약으로
+    // 보장한다(SettlementDeduplication.kt 참조).
     @Transactional
     fun calculateShopSettlement(shopId: Long, yearMonth: YearMonth): Settlement {
         val (start, end) = monthRange(yearMonth)
-
-        if (settlementRepository.findByTargetTypeAndTargetIdAndPeriodStartAndPeriodEnd(
-                SettlementTargetType.SHOP, shopId, start, end,
-            ) != null
-        ) {
-            throw BusinessException(SettlementErrorCode.SETTLEMENT_ALREADY_EXISTS)
-        }
 
         val rate = commissionRateRepository
             .findTopByRateTypeAndEffectiveFromLessThanEqualOrderByEffectiveFromDesc(RateType.PLATFORM_FEE, start)
@@ -54,7 +49,7 @@ class ShopSettlementService(
         val carriedOver = previousCarryOver(shopId, yearMonth)
         val totalAmount = saleAmounts.sumOf { it.second } + refundAmounts.sumOf { it.second } + carriedOver
 
-        val settlement = settlementRepository.save(
+        val settlement = settlementRepository.saveOrThrowDuplicate(
             Settlement(
                 targetType = SettlementTargetType.SHOP,
                 targetId = shopId,

@@ -1,10 +1,8 @@
 package delivery.settlement.application
 
-import delivery.common.exception.BusinessException
 import delivery.delivery.application.DeliveryService
 import delivery.order.application.OrderService
 import delivery.settlement.domain.Settlement
-import delivery.settlement.domain.SettlementErrorCode
 import delivery.settlement.domain.SettlementItem
 import delivery.settlement.domain.SettlementItemType
 import delivery.settlement.domain.SettlementTargetType
@@ -30,22 +28,17 @@ class RiderSettlementService(
     private val deliveryService: DeliveryService,
     private val orderService: OrderService,
 ) {
+    // 같은 기간 중복 계산 방지는 사전 조회가 아니라 저장 시점의 유니크 제약으로
+    // 보장한다(SettlementDeduplication.kt 참조, ShopSettlementService와 동일한 이유).
     @Transactional
     fun calculateRiderSettlement(riderId: Long, yearMonth: YearMonth): Settlement {
         val (start, end) = monthRange(yearMonth)
-
-        if (settlementRepository.findByTargetTypeAndTargetIdAndPeriodStartAndPeriodEnd(
-                SettlementTargetType.RIDER, riderId, start, end,
-            ) != null
-        ) {
-            throw BusinessException(SettlementErrorCode.SETTLEMENT_ALREADY_EXISTS)
-        }
 
         val orderIds = deliveryService.getDeliveredOrderIds(riderId, start, end)
         val deliveryFees = orderService.getDeliveryFees(orderIds)
         val totalAmount = orderIds.sumOf { deliveryFees[it] ?: 0L }
 
-        val settlement = settlementRepository.save(
+        val settlement = settlementRepository.saveOrThrowDuplicate(
             Settlement(
                 targetType = SettlementTargetType.RIDER,
                 targetId = riderId,

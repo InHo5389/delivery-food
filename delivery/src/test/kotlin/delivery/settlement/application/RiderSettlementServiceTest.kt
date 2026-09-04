@@ -13,6 +13,7 @@ import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
 import org.junit.jupiter.api.BeforeEach
+import org.springframework.dao.DataIntegrityViolationException
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import java.math.BigDecimal
@@ -36,7 +37,6 @@ class RiderSettlementServiceTest {
     fun setUp() {
         riderSettlementService = RiderSettlementService(settlementRepository, settlementItemRepository, deliveryService, orderService)
 
-        every { settlementRepository.findByTargetTypeAndTargetIdAndPeriodStartAndPeriodEnd(any(), any(), any(), any()) } returns null
         every { settlementItemRepository.saveAll(any<List<SettlementItem>>()) } returns emptyList()
         every { settlementRepository.save(any()) } answers { (it.invocation.args[0] as Settlement).also { s -> setId(s, 100L) } }
     }
@@ -95,9 +95,10 @@ class RiderSettlementServiceTest {
     }
 
     @Test
-    fun `이미 같은 기간의 정산이 있으면 예외가 발생한다`() {
-        every { settlementRepository.findByTargetTypeAndTargetIdAndPeriodStartAndPeriodEnd(SettlementTargetType.RIDER, riderId, any(), any()) } returns
-            Settlement.withId(1L, SettlementTargetType.RIDER, riderId, Instant.now(), Instant.now().plusSeconds(1))
+    fun `동시에 같은 기간이 계산돼 저장 시점에 유니크 제약을 위반하면 예외가 발생한다`() {
+        every { deliveryService.getDeliveredOrderIds(riderId, any(), any()) } returns listOf(101L)
+        every { orderService.getDeliveryFees(listOf(101L)) } returns mapOf(101L to 3000L)
+        every { settlementRepository.save(any()) } throws DataIntegrityViolationException("uk_settlement_target_period")
 
         val exception = assertThrows<BusinessException> { riderSettlementService.calculateRiderSettlement(riderId, march) }
 

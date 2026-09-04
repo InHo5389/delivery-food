@@ -17,6 +17,7 @@ import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
 import org.junit.jupiter.api.BeforeEach
+import org.springframework.dao.DataIntegrityViolationException
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import java.math.BigDecimal
@@ -139,9 +140,10 @@ class ShopSettlementServiceTest {
     }
 
     @Test
-    fun `이미 같은 기간의 정산이 있으면 예외가 발생한다`() {
-        every { settlementRepository.findByTargetTypeAndTargetIdAndPeriodStartAndPeriodEnd(SettlementTargetType.SHOP, shopId, any(), any()) } returns
-            Settlement.withId(1L, SettlementTargetType.SHOP, shopId, Instant.now(), Instant.now().plusSeconds(1))
+    fun `동시에 같은 기간이 계산돼 저장 시점에 유니크 제약을 위반하면 예외가 발생한다`() {
+        every { orderService.getDeliveredOrderAmounts(shopId, any(), any()) } returns listOf(ShopSettlementSourceItem(orderId = 101L, amount = 10_000L))
+        every { orderService.getRefundedPaymentAmounts(shopId, any(), any()) } returns emptyList()
+        every { settlementRepository.save(any()) } throws DataIntegrityViolationException("uk_settlement_target_period")
 
         val exception = assertThrows<BusinessException> { shopSettlementService.calculateShopSettlement(shopId, march) }
 

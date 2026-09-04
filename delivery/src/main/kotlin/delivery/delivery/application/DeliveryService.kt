@@ -1,9 +1,12 @@
 package delivery.delivery.application
 
+import delivery.common.exception.BusinessException
 import delivery.delivery.application.dto.CreateDeliveryCommand
 import delivery.delivery.domain.Delivery
+import delivery.delivery.domain.DeliveryErrorCode
 import delivery.delivery.domain.DeliveryStatus
 import delivery.delivery.infrastructure.DeliveryRepository
+import delivery.delivery.infrastructure.RiderRepository
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Instant
@@ -11,6 +14,7 @@ import java.time.Instant
 @Service
 class DeliveryService(
     private val deliveryRepository: DeliveryRepository,
+    private val riderRepository: RiderRepository,
 ) {
     // order 모듈이 주문 접수(ACCEPTED) 시점에 호출한다. 배차 매칭 스케줄러가 5초마다
     // PENDING 배달을 훑으므로, 이 호출 이후 다음 사이클 안에 오퍼가 나가기 시작한다.
@@ -35,4 +39,14 @@ class DeliveryService(
         deliveryRepository
             .findAllByRiderIdAndStatusAndUpdatedAtGreaterThanEqualAndUpdatedAtLessThan(riderId, DeliveryStatus.DELIVERED, from, to)
             .map { it.orderId }
+
+    // settlement 모듈이 "내 정산"(라이더 본인)을 조회할 때 accountId(JWT의 userId)를
+    // riderId로 바꾸는 데 쓴다.
+    fun getRiderIdByAccountId(accountId: Long): Long =
+        riderRepository.findByAccountId(accountId)?.id ?: throw BusinessException(DeliveryErrorCode.RIDER_NOT_FOUND)
+
+    // settlement 모듈이 특정 정산(Settlement.targetId = riderId)의 소유자가 요청자
+    // 본인인지 검증할 때 반대 방향으로 쓴다.
+    fun getRiderAccountId(riderId: Long): Long? =
+        riderRepository.findById(riderId).orElse(null)?.accountId
 }

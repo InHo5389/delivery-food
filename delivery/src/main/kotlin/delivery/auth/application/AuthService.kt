@@ -5,6 +5,7 @@ import delivery.auth.application.dto.SignupCommand
 import delivery.auth.application.dto.TokenPair
 import delivery.auth.domain.Account
 import delivery.auth.domain.AuthErrorCode
+import delivery.auth.domain.Role
 import delivery.auth.infrastructure.AccountRepository
 import delivery.common.exception.BusinessException
 import org.springframework.security.crypto.password.PasswordEncoder
@@ -19,6 +20,9 @@ class AuthService(
 ) {
     @Transactional
     fun signup(command: SignupCommand): TokenPair {
+        if (command.role == Role.ADMIN) {
+            throw BusinessException(AuthErrorCode.ADMIN_SIGNUP_NOT_ALLOWED)
+        }
         if (accountRepository.existsByEmail(command.email)) {
             throw BusinessException(AuthErrorCode.EMAIL_ALREADY_EXISTS)
         }

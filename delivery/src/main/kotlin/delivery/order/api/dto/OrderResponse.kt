@@ -21,6 +21,7 @@ data class CreateOrderResponse(
     val orderId: Long,
     val status: String,
     val totalAmount: Long,
+    val deliveryFee: Long,
     val items: List<OrderItemResponse>,
 ) {
     companion object {
@@ -29,6 +30,7 @@ data class CreateOrderResponse(
                 orderId = result.order.id!!,
                 status = result.order.status.name,
                 totalAmount = result.totalAmount,
+                deliveryFee = result.order.deliveryFee,
                 items = result.items.map(OrderItemResponse::from),
             )
     }
@@ -38,6 +40,7 @@ data class OrderResponse(
     val orderId: Long,
     val shopId: Long,
     val status: String,
+    val deliveryFee: Long,
     val items: List<OrderItemResponse>,
 ) {
     companion object {
@@ -46,6 +49,7 @@ data class OrderResponse(
                 orderId = order.id!!,
                 shopId = order.shopId,
                 status = order.status.name,
+                deliveryFee = order.deliveryFee,
                 items = items.map(OrderItemResponse::from),
             )
 

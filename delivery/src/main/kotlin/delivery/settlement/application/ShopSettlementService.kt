@@ -16,13 +16,7 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.math.BigDecimal
 import java.math.RoundingMode
-import java.time.Instant
 import java.time.YearMonth
-import java.time.ZoneId
-
-// 정산 기간은 "그 달" 단위라 한국 사용자 기준 KST로 월 경계를 계산한다(OrderService의
-// 일 단위 매출 집계와 동일한 이유).
-private val KST = ZoneId.of("Asia/Seoul")
 
 // ★ 모듈 간 호출은 OrderService를 직접 주입해서 쓴다(Facade를 두지 않음, 01_설계원칙.md
 //   4절 — 모놀리스 단계에서는 직접 호출이 허용된다).
@@ -124,11 +118,5 @@ class ShopSettlementService(
             SettlementTargetType.SHOP, shopId, previousStart, previousEnd,
         ) ?: return 0L
         return if (previous.totalAmount < 0) previous.totalAmount else 0L
-    }
-
-    private fun monthRange(yearMonth: YearMonth): Pair<Instant, Instant> {
-        val start = yearMonth.atDay(1).atStartOfDay(KST).toInstant()
-        val end = yearMonth.plusMonths(1).atDay(1).atStartOfDay(KST).toInstant()
-        return start to end
     }
 }

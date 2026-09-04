@@ -2,6 +2,7 @@ package delivery.delivery.application
 
 import delivery.delivery.application.dto.CreateDeliveryCommand
 import delivery.delivery.domain.Delivery
+import delivery.delivery.domain.DeliveryStatus
 import delivery.delivery.infrastructure.DeliveryRepository
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -26,4 +27,12 @@ class DeliveryService(
                 estimatedPickupAt = Instant.now().plusSeconds(command.estimatedCookingMinutes * 60L),
             )
         )
+
+    // settlement 모듈이 라이더 정산을 계산할 때 쓴다. 배달비 금액 자체는 order 모듈이
+    // 갖고 있어(Order.deliveryFee) 여기서는 "이 라이더가 이 기간에 완료한 배달이 어느
+    // 주문들인지"만 돌려주고, 금액 조회는 settlement가 order 모듈에 별도로 요청한다.
+    fun getDeliveredOrderIds(riderId: Long, from: Instant, to: Instant): List<Long> =
+        deliveryRepository
+            .findAllByRiderIdAndStatusAndUpdatedAtGreaterThanEqualAndUpdatedAtLessThan(riderId, DeliveryStatus.DELIVERED, from, to)
+            .map { it.orderId }
 }

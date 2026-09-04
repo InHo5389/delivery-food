@@ -105,6 +105,7 @@ class OrderService(
                 shopId = cart.cart.shopId,
                 customerName = command.customerName,
                 customerPhone = command.customerPhone,
+                deliveryFee = shop.deliveryFee,
             )
         )
 
@@ -122,8 +123,10 @@ class OrderService(
             )
         }
 
+        // 결제 금액은 메뉴 합계 + 배달비다 — 배달비는 상점이 아니라 라이더 몫이지만
+        // (01_설계원칙.md), 고객에게는 한 번에 청구된다.
         val payment = paymentService.requestPayment(
-            RequestPaymentCommand(orderId = order.id!!, amount = cart.totalPrice)
+            RequestPaymentCommand(orderId = order.id!!, amount = cart.totalPrice + shop.deliveryFee)
         )
 
         val nextStatus = if (payment.status == PaymentStatus.APPROVED) OrderStatus.PAID else OrderStatus.PAYMENT_FAILED
@@ -322,6 +325,11 @@ class OrderService(
     fun getRefundedPaymentAmounts(shopId: Long, from: Instant, to: Instant): List<ShopSettlementSourceItem> =
         shopSettlementSourceRepository.findRefundedPaymentAmounts(shopId, from, to)
             .map { ShopSettlementSourceItem(it.orderId, it.amount) }
+
+    // settlement 모듈이 라이더 정산을 계산할 때 쓴다. 배달비는 라이더 몫으로, 플랫폼
+    // 수수료 대상이 아니라 요율 적용 없이 스냅샷된 금액을 그대로 돌려준다.
+    fun getDeliveryFees(orderIds: List<Long>): Map<Long, Long> =
+        orderRepository.findAllById(orderIds).associate { it.id!! to it.deliveryFee }
 
     private fun getOrderForOwner(orderId: Long, requester: AuthenticatedUser): Pair<Order, Shop> {
         val order = orderRepository.findById(orderId).orElseThrow { BusinessException(OrderErrorCode.ORDER_NOT_FOUND) }
